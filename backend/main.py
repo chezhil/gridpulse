@@ -44,7 +44,8 @@ async def lifespan(app):
 
 app = FastAPI(title='GridPulse', version='1.0.0', lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:8000', 'http://127.0.0.1:8000',
-    'http://localhost:5500', 'http://127.0.0.1:5500', 'http://localhost:8080', 'http://127.0.0.1:8080'],
+    'http://localhost:5500', 'http://127.0.0.1:5500', 'http://localhost:8080', 'http://127.0.0.1:8080',
+    'http://localhost:8765', 'http://127.0.0.1:8765', 'http://localhost:8766', 'http://127.0.0.1:8766'],
     allow_methods=['GET', 'POST'], allow_headers=['Authorization', 'Content-Type', 'X-Operator-Token'])
 app.include_router(auth_router, prefix='/api/auth', tags=['auth'])
 app.include_router(audit_router, prefix='/api/audit', tags=['audit'])

@@ -12,7 +12,7 @@ All demo actions are simulated. Local audits are stored in the browser and can b
 
 ## Backend integration contract to confirm
 
-The adapters target `http://localhost:8000` and `ws://localhost:8000/ws/telemetry`. Endpoint paths match the supplied documents. Request/response shapes below are frontend assumptions because the live backend was unavailable for integration testing.
+When the backend serves the UI, the adapters use the page's own origin (and `ws(s)://<origin>/ws/telemetry`). Static previews on ports 5500, 8080, 8765 or 8766, and `file://` pages, target `http://localhost:8000`. The shapes below were the original frontend assumptions; the integrated backend's actual responses are documented in the root README and `backend/graph/README.md`.
 
 - `POST /api/auth/login`: JSON `{username, password, role, demo}`. Demo requests omit credentials. Expected response `{access_token, role, expires_in, user:{name}}` (also accepts `token` and a `data` envelope). Role values: `operator`, `engineer`, `auditor`. Backend must enforce permissions independently of the UI.
 - REST requests attach `Authorization: Bearer <token>`. WebSocket uses `?token=<encoded token>`; coordinate this handshake with the backend, use WSS outside local development, and avoid logging the token.

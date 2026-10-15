@@ -1,6 +1,7 @@
 (() => {
   'use strict';
-  const API=location.port==='8000'?location.origin:'http://localhost:8000', WS=API.replace(/^http/,'ws')+'/ws/telemetry', $=id=>document.getElementById(id);
+  // Same origin when the backend serves the UI; static previews and file:// use the local backend.
+  const API=(location.protocol.startsWith('http')&&!['5500','8080','8765','8766'].includes(location.port)?location.origin:'http://localhost:8000'), WS=API.replace(/^http/,'ws')+'/ws/telemetry', $=id=>document.getElementById(id);
   let session;try{session=JSON.parse(localStorage.getItem('gridpulse_session'));}catch{}
   if(!session || !['operator','engineer','auditor'].includes(session.role) || !session.expiresAt || session.expiresAt<Date.now()){location.replace('login.html');return;}
   const roleNames={operator:'Chief Grid Operator',engineer:'Topology Engineer',auditor:'Compliance Auditor'};

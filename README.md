@@ -4,16 +4,15 @@ An educational, single-worker grid interception demo: the animated landing page,
 
 ## Start the complete app
 
-Requires a running Docker Desktop. Use the **integration checkout**, not the original contributor checkout:
+Requires a running Docker Desktop. From the repository root:
 
 ```sh
-cd /Users/chez/Documents/Codex/2026-10-15/new-chat/gridpulse
 docker compose up --build
 ```
 
 Open **http://localhost:8000**, choose **Launch Console**, then **Chief Grid Operator**. Run lightning, inspect the Cypher trace and audit evidence, reset, and repeat for wildfire and heatwave. Engineer and auditor are read-only. API documentation: http://localhost:8000/docs.
 
-Both the frontend and API use port 8000. The verified FalkorDB image is pinned by digest. Compose normally publishes FalkorDB on `127.0.0.1:6379`. On this machine, an existing unrelated database already owns 6379, so the integration checkout has an **untracked `.env` with `FALKORDB_HOST_PORT=6380`**. This starts a separate database without stopping or modifying the existing one. To reproduce explicitly:
+Both the frontend and API use port 8000. The verified FalkorDB image is pinned by digest. Compose publishes FalkorDB on `127.0.0.1:6379`. If something else already uses 6379, set `FALKORDB_HOST_PORT` in an untracked `.env`, or pass it inline:
 
 ```sh
 FALKORDB_HOST_PORT=6380 docker compose up --build
@@ -73,7 +72,7 @@ A token can be obtained with `POST /api/auth/login` and JSON `{"demo":true,"role
 ## Verified results — 15 October 2026
 
 ```sh
-# Database port for this machine's integration stack:
+# FALKORDB_PORT is the host port of the Compose database (6379 unless overridden):
 FALKORDB_PORT=6380 GRIDPULSE_REQUIRE_FALKORDB=1 .venv/bin/python -m pytest -q
 # Require real database tests; do not allow connection-based skips:
 FALKORDB_PORT=6380 GRIDPULSE_REQUIRE_FALKORDB=1 .venv/bin/python -m pytest backend/graph/tests -q
@@ -100,7 +99,7 @@ The running-stack check passed actual MCP stdio initialize/list/query/dispatch a
 
 Browser acceptance passed landing→demo login→dashboard→lightning→real graph evidence→mitigation→audit→reset, wildfire, exact 120%/1008 MW heatwave telemetry, both themes, 1440px desktop and 390px narrow layouts, canonical span mapping, live fault/reroute styling, reset during a run, WebSocket reconnect, offline action isolation, and both read-only roles. The check also covers retry after a failed topology load and an expired session. No JavaScript page errors occurred. Verification used headless Chromium in `mcr.microsoft.com/playwright:v1.64.1-noble` because the local macOS browser process was blocked by the sandbox; Safari and Firefox were not tested.
 
-Python compilation, JavaScript syntax and `git diff --check` passed. The landing HTML, its animation script, and shared specification are unchanged from integration commit `093c2ee`. The original contributor checkout remains untouched. No push, main merge or external deployment was performed.
+Python compilation, JavaScript syntax and `git diff --check` passed. The landing HTML, its animation script, and shared specification are unchanged from integration commit `093c2ee`.
 
 ## Remaining limitations
 
