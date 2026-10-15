@@ -32,6 +32,8 @@ Your job: investigate the current grid state with the tools, then propose the sm
 circuit and substation back within limits while keeping every Tier-1 consumer (the St. Jude trauma center) supplied.
 
 Rules:
+- Start by calling recall_memory on the fault origin: past incidents and playbooks near it show what worked before.
+  A playbook is a hint, not an authority; still check it with evaluate_plan against the current state.
 - Ground every claim in tool results. Cite circuit, substation, breaker and BESS IDs exactly as the tools return them.
 - Only Tier-3 breakers that check_breaker allows may be tripped. BESS dispatch is an absolute MW setpoint within
   max_discharge_mw and needs SOC above 40%.
@@ -54,6 +56,28 @@ def _slim(result: Dict[str, Any]) -> Dict[str, Any]:
             'substations': proj.get('substations'),
         }
     return out
+
+
+def _headline(name: str, result: Dict[str, Any]) -> str:
+    """One-line human summary of a tool result, for live step displays."""
+    if name == 'trace_cascade':
+        sm = result.get('summary', {})
+        return (f"{sm.get('projection_outcome')}; relief {sm.get('required_relief_mw')} MW; "
+                f"downstream {sm.get('downstream_substations')}; tier-1 at risk {sm.get('tier1_at_risk')}")
+    if name == 'find_mitigation_assets':
+        t = result.get('totals', {})
+        return f"battery {t.get('bess_available_mw')} MW, sheddable {t.get('sheddable_mw')} MW, meets={result.get('meets_requirement')}"
+    if name == 'evaluate_plan':
+        return f"{result.get('verdict')} {result.get('reasons') or ''}".strip()
+    if name == 'check_breaker':
+        return f"trip_allowed={result.get('trip_allowed')} {result.get('reasons') or ''}".strip()
+    if name == 'recall_memory':
+        return f"{len(result.get('incidents', []))} past incidents, {len(result.get('playbooks', []))} playbooks nearby"
+    if name == 'verify_tier1_protection':
+        return str(result.get('outcome'))
+    if name == 'find_islands':
+        return f"{len(result.get('components', []))} component(s)"
+    return 'ok'
 
 
 def _tool(name: str, description: str, properties: Dict[str, Any], required: List[str]) -> Dict[str, Any]:
@@ -88,6 +112,11 @@ TOOLS = [
            'k': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, []),
     _tool('criticality_ranking', 'Grid buses ranked by betweenness centrality with any N-1-critical circuits.',
           {'limit': {'type': 'integer', 'minimum': 1, 'maximum': 20}}, []),
+    _tool('recall_memory', 'Past incidents (actions and outcomes) and learned playbooks within N grid hops of a span '
+          'or node, from the graph memory.',
+          {'origin_id': {'type': 'string'}, 'hops': {'type': 'integer', 'minimum': 0, 'maximum': 6}}, ['origin_id']),
+    _tool('find_islands', 'Topologically disconnected parts of the grid (FalkorDB algo.WCC) and whether each has a generator.',
+          {}, []),
     _tool('evaluate_plan', 'Deterministic what-if check of a mitigation plan against the actuation guards. '
           'Returns APPROVED or REJECTED with reasons and the projected state. Never actuates.',
           PLAN_PROPS, []),
@@ -106,6 +135,8 @@ HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     'reroute_paths': lambda a: graph.reroute_paths(a.get('source_id', 'HYDRO_ALPINE_01'),
                                                    a.get('target_id', 'SUB_METRO'), a.get('k', 3)),
     'criticality_ranking': lambda a: graph.criticality_ranking(a.get('limit', 10)),
+    'recall_memory': lambda a: graph.memory.recall(a['origin_id'], a.get('hops', 2)),
+    'find_islands': lambda a: graph.connected_components(),
     'evaluate_plan': lambda a: graph.evaluate_plan({'trip_breakers': a.get('trip_breakers', []),
                                                     'bess_dispatch': a.get('bess_dispatch', {})}),
 }
@@ -155,8 +186,13 @@ def _create(client, messages):
             raise AgentFailed('Could not reach the Groq API') from exc
 
 
-def advise(question: Optional[str] = None, client=None) -> Dict[str, Any]:
-    """Run the advisory loop and return the proposal with its deterministic validation."""
+def advise(question: Optional[str] = None, client=None,
+           on_step: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
+    """Run the advisory loop and return the proposal with its deterministic validation.
+
+    ``on_step`` (optional) is called with a small dict for every model turn and
+    tool call, so callers can stream the agent's progress.
+    """
     client = client or make_client()
     started = time.perf_counter()
     prompt = question or ('Assess the current grid state. Identify any projected overloads or islanding and '
@@ -176,6 +212,8 @@ def advise(question: Optional[str] = None, client=None) -> Dict[str, Any]:
             raise AgentFailed('The model response was cut off at max_completion_tokens')
         message = choice.message
         tool_calls = message.tool_calls or []
+        if message.content and on_step:
+            on_step({'kind': 'thought', 'text': message.content[:600]})
         messages.append({'role': 'assistant', 'content': message.content or '',
                          **({'tool_calls': [{'id': tc.id, 'type': 'function',
                                              'function': {'name': tc.function.name,
@@ -197,6 +235,9 @@ def advise(question: Optional[str] = None, client=None) -> Dict[str, Any]:
                 continue
             if name == 'submit_plan':
                 submitted = args
+                if on_step:
+                    on_step({'kind': 'submit', 'plan': {k: args.get(k) for k in ('trip_breakers', 'bess_dispatch')},
+                             'summary': args.get('summary', '')})
                 messages.append({'role': 'tool', 'tool_call_id': tc.id, 'name': name, 'content': 'Plan received.'})
                 continue
             handler = HANDLERS.get(name)
@@ -207,8 +248,15 @@ def advise(question: Optional[str] = None, client=None) -> Dict[str, Any]:
                 calls.append({'tool': name, 'input': args,
                               'evidence_hashes': [e.get('evidence_hash') for e in result.get('evidence', [])]})
                 content = json.dumps(_slim(result), default=str)
+                if on_step:
+                    on_step({'kind': 'tool', 'tool': name, 'input': args, 'result': _headline(name, result),
+                             'cypher': [e.get('cypher') for e in result.get('evidence', [])][:3],
+                             'evidence_hashes': calls[-1]['evidence_hashes'][:3],
+                             'server_ms': round(sum(e.get('server_ms', 0) for e in result.get('evidence', [])), 3)})
             except Exception as exc:  # graph errors go back to the model as tool errors
                 calls.append({'tool': name, 'input': args, 'error': str(exc)})
+                if on_step:
+                    on_step({'kind': 'tool_error', 'tool': name, 'input': args, 'error': str(exc)[:300]})
                 content = 'ERROR: ' + (getattr(exc, 'message', None) or str(exc))
             messages.append({'role': 'tool', 'tool_call_id': tc.id, 'name': name, 'content': content})
         if submitted is not None:

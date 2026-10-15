@@ -34,6 +34,7 @@ def get_grid_state() -> Dict[str, Any]:
 @sim_router.post("/trigger-scenario/{scenario_id}")
 async def trigger_scenario(
     scenario_id: int,
+    mode: str = "deterministic",
     session: OperatorSession = Depends(require_role(["operator", "NERC_OPERATOR", "SCADA_ADMIN"]))
 ) -> Dict[str, Any]:
     """
@@ -42,6 +43,9 @@ async def trigger_scenario(
     1 = Lightning Strike on Span TX-882 (T3 -> T4)
     2 = Wildfire Smoke Ionization along corridor (T5 -> T6)
     3 = 5 PM Extreme Heatwave Demand Surge (120% City Load)
+    mode=deterministic (default) runs the scripted graph pipeline; mode=agent lets the
+    LLM agent investigate and propose, with the graph guard deciding and the
+    deterministic pipeline as fallback.
     Requires authenticated operator session.
     """
     if scenario_id not in (1, 2, 3):
@@ -53,7 +57,8 @@ async def trigger_scenario(
     try:
         return await grid_simulator.trigger_scenario(
             scenario_id=scenario_id,
-            operator_id=session.operator_id
+            operator_id=session.operator_id,
+            mode=mode
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))

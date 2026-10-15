@@ -34,7 +34,8 @@ from .client import (
     set_client,
 )
 from .evidence import evidence_hash, verify_evidence
-from .algorithms import criticality_ranking, reroute_paths
+from . import memory
+from .algorithms import connected_components, criticality_ranking, reroute_paths, zones
 from .queries import (
     check_breaker,
     evaluate_plan,
@@ -74,6 +75,9 @@ __all__ = [
     "UnknownEntityError",
     "apply_state_update",
     "check_breaker",
+    "connected_components",
+    "memory",
+    "zones",
     "criticality_ranking",
     "evaluate_plan",
     "reroute_paths",

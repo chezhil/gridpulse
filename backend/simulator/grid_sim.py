@@ -39,6 +39,9 @@ class GridSimulator:
         self._agent_log = 'Educational simulator ready. Awaiting graph readiness.'
         self._graphblas_latency_ms = None
         self._evidence = []
+        self._mode = 'deterministic'
+        self._agent_steps = []
+        self._memory = None
         self._init_grid_data()
 
     def _init_grid_data(self):
@@ -93,6 +96,7 @@ class GridSimulator:
             'spans': list(self._spans.values()), 'towers': list(self._towers.values()),
             'substation': self._substation, 'bess': self._bess, 'consumers': list(self._consumers.values()),
             'active_cypher': self._active_cypher, 'agent_log': self._agent_log, 'evidence': self._evidence,
+            'mode': self._mode, 'agent_steps': self._agent_steps[-40:], 'memory': self._memory,
             'simulation_model': 'dc-pf/1'})
 
     def record(self, action, target, reason, outcome='SUCCESS', evidence=None, requested_action=None,
@@ -132,6 +136,9 @@ class GridSimulator:
             self._graphblas_latency_ms = None
             self._active_cypher = ''
             self._evidence = []
+            self._agent_steps = []
+            self._memory = None
+            self._mode = 'deterministic'
             try:
                 await asyncio.to_thread(graph.reset_grid)
                 self._agent_log = 'Simulator and FalkorDB reset to nominal. Audit history preserved.'
@@ -143,11 +150,13 @@ class GridSimulator:
                 raise
             return self.get_snapshot()
 
-    async def trigger_scenario(self, scenario_id, operator_id='SCADA_OPERATOR'):
+    async def trigger_scenario(self, scenario_id, operator_id='SCADA_OPERATOR', mode='deterministic'):
         from backend import graph
         from backend.mcp.interceptor import get_interceptor
         if scenario_id not in (1, 2, 3):
             raise ValueError('Scenario must be 1, 2, or 3')
+        if mode not in ('deterministic', 'agent'):
+            raise ValueError("mode must be 'deterministic' or 'agent'")
         async with self._lock:
             if self._active_task and not self._active_task.done():
                 if self._scenario_id == scenario_id:
@@ -166,7 +175,10 @@ class GridSimulator:
             await asyncio.to_thread(self.record, 'SCENARIO_TRIGGER', f'SCENARIO_{scenario_id}', self._scenario_name,
                         operator_id=operator_id, requested_action={'scenario_id': scenario_id})
             self._scenario_status = 'FAULT_DETECTED'
-            self._active_task = asyncio.create_task(get_interceptor().run(self._run_id, scenario_id))
+            self._mode = mode
+            self._agent_steps = []
+            self._memory = None
+            self._active_task = asyncio.create_task(get_interceptor().run(self._run_id, scenario_id, mode))
             return self.get_snapshot()
 
     def inject_fault(self, scenario_id):

@@ -121,3 +121,38 @@ def reroute_paths(
         "evidence": [q.evidence()],
         "timing": _timing([q], started),
     }
+
+
+WCC_CYPHER = """\
+CALL algo.WCC({nodeLabels: ['HydroPlant', 'Tower', 'Substation'], relationshipTypes: ['FEEDS', 'SPAN', 'TERMINATES_AT']})
+YIELD node, componentId
+RETURN componentId, collect(node.id) AS members, sum(CASE WHEN node:HydroPlant THEN 1 ELSE 0 END) AS plants
+ORDER BY size(members) DESC"""
+
+ZONES_CYPHER = """\
+CALL algo.labelPropagation({nodeLabels: ['HydroPlant', 'Tower', 'Substation'],
+                            relationshipTypes: ['FEEDS', 'SPAN', 'TERMINATES_AT'], maxIterations: 30})
+YIELD node, communityId
+RETURN communityId, collect(node.id) AS members
+ORDER BY size(members) DESC"""
+
+
+def connected_components(client: Optional[GraphClient] = None) -> Dict[str, Any]:
+    """Topological islands (algo.WCC). Ignores breaker state: it finds parts that are never connected."""
+    client = client or get_client()
+    started = time.perf_counter()
+    q = client.query("wcc", WCC_CYPHER)
+    comps = [{"component": r["componentId"], "size": len(r["members"]), "members": sorted(r["members"]),
+              "has_generator": r["plants"] > 0} for r in q.rows]
+    return {"algorithm": "algo.WCC", "components": comps, "connected": len(comps) <= 1,
+            "unsupplied_parts": [c for c in comps if not c["has_generator"]],
+            "evidence": [q.evidence()], "timing": _timing([q], started)}
+
+
+def zones(client: Optional[GraphClient] = None) -> Dict[str, Any]:
+    """Grid zones by community detection (algo.labelPropagation). Most meaningful on meshed grids."""
+    client = client or get_client()
+    started = time.perf_counter()
+    q = client.query("zones", ZONES_CYPHER)
+    found = [{"zone": r["communityId"], "size": len(r["members"]), "members": sorted(r["members"])} for r in q.rows]
+    return {"algorithm": "algo.labelPropagation", "zones": found, "evidence": [q.evidence()], "timing": _timing([q], started)}

@@ -22,7 +22,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from . import algorithms, benchmark, queries
+from . import algorithms, benchmark, memory, queries
 from .client import (
     GraphClient,
     GraphDataError,
@@ -161,6 +161,36 @@ def evaluate_plan(body: PlanRequest, client: GraphClient = Depends(get_client)) 
 def run_benchmark(body: BenchmarkRequest, client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
     """Measured FalkorDB vs SQLite 6-hop trace on a synthetic meshed grid (results checked equal)."""
     return _run(lambda: benchmark.run_benchmark(body.size, body.runs, body.origins, client, body.max_hops))
+
+
+@router.get("/islands")
+def islands(client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """Topological islands via algo.WCC."""
+    return _run(lambda: algorithms.connected_components(client))
+
+
+@router.get("/zones")
+def grid_zones(client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """Grid zones via algo.labelPropagation."""
+    return _run(lambda: algorithms.zones(client))
+
+
+@router.get("/memory/incidents")
+def memory_incidents(limit: int = 50, client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """Episodic memory: past incidents with their actions and outcomes."""
+    return _run(lambda: memory.list_incidents(limit, client))
+
+
+@router.get("/memory/playbooks")
+def memory_playbooks(client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """Procedural memory: plans learned per trigger signature, with success/failure counts."""
+    return _run(lambda: memory.list_playbooks(client))
+
+
+@router.get("/memory/recall")
+def memory_recall(origin_id: str, hops: int = 2, client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """Incidents and playbooks within `hops` grid hops of a span or node."""
+    return _run(lambda: memory.recall(origin_id, hops, client=client))
 
 
 @router.get("/health")
