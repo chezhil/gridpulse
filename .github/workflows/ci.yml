@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      falkordb:
+        # Same digest as docker-compose.yml.
+        image: falkordb/falkordb@sha256:107455e862a824e45e8e9f5a7fbfdf5e00a08b14e13eae2577c72fd9e3f59ba6
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      FALKORDB_HOST: localhost
+      FALKORDB_PORT: "6379"
+      GRIDPULSE_REQUIRE_FALKORDB: "1"
+      GRIDPULSE_AUDIT_DB: ${{ runner.temp }}/audit_log.db
+      GRIDPULSE_BENCH_DIR: ${{ runner.temp }}/bench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: python -m pip install -r backend/requirements-dev.txt
+      - run: python -m compileall -q backend
+      - run: python -m pytest -q

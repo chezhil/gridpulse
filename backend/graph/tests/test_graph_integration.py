@@ -262,3 +262,74 @@ def test_empty_graph_is_not_seeded(live_client, falkordb_settings):
         get_topology(empty)
     with pytest.raises((GraphNotSeededError, UnknownEntityError)):
         trace_cascade("TX_882", client=empty)
+
+
+# --- N-1, algorithms, plan evaluation, benchmark ---------------------------
+
+from graph.algorithms import criticality_ranking, reroute_paths  # noqa: E402
+from graph.queries import evaluate_plan, run_contingency_scan  # noqa: E402
+
+
+def test_contingency_scan_tags_and_reset_clears(graph):
+    scan = run_contingency_scan(client=graph)
+    assert scan["contingency_count"] == 18
+    # Losing any primary pushes 840 MW onto an 800 MW backup; losing a backup is secure.
+    assert sorted(scan["critical_outages"]) == [f"TX_{880 + i}:UPPER_PRIMARY" for i in range(9)]
+    assert scan["n1_secure"] is False
+    tagged = next(e for e in get_topology(graph)["edges"] if e["id"] == "TX_882:UPPER_PRIMARY")
+    assert tagged["properties"]["n1_outcome"] == "OVERLOAD_PREDICTED"
+    assert tagged["properties"]["n1_state_version"] == scan["state_version"]
+    reset_grid(graph)
+    cleared = next(e for e in get_topology(graph)["edges"] if e["id"] == "TX_882:UPPER_PRIMARY")
+    assert "n1_outcome" not in cleared["properties"]
+
+
+def test_criticality_uses_betweenness_and_n1_tags(graph):
+    run_contingency_scan(client=graph)
+    r = criticality_ranking(5, graph)
+    assert r["ranking"][0]["id"] == "T5"  # middle of the corridor
+    assert r["ranking"][0]["n1_critical_circuits"]
+
+
+def test_reroute_skips_tripped_circuit(graph):
+    best = reroute_paths(client=graph)["paths"][0]
+    assert "TX_882:UPPER_PRIMARY" in best["circuits"]
+    apply_state_update({"spans": [LIGHTNING_TRIP]}, graph)
+    r = reroute_paths(k=2, client=graph)
+    assert r["outcome"] == "PATHS_FOUND"
+    assert all("TX_882:UPPER_PRIMARY" not in p["circuits"] for p in r["paths"])
+    assert "TX_882:LOWER_BACKUP" in r["paths"][0]["circuits"]
+    with pytest.raises(UnknownEntityError):
+        reroute_paths("HYDRO_ALPINE_01", "SUB_NOWHERE", client=graph)
+
+
+def test_evaluate_plan_verdicts(graph):
+    apply_state_update({"spans": [LIGHTNING_TRIP]}, graph)
+    ok = evaluate_plan({"trip_breakers": ["BRK_IND_12"], "bess_dispatch": {"BESS_METRO_01": 45.0}}, client=graph)
+    assert ok["verdict"] == "APPROVED" and ok["relief_mw"] == pytest.approx(107.0)
+    short = evaluate_plan({"bess_dispatch": {"BESS_METRO_01": 45.0}}, client=graph)
+    assert short["verdict"] == "REJECTED" and "PROJECTION_OVERLOAD_PREDICTED" in short["reasons"]
+    hosp = evaluate_plan({"trip_breakers": ["BRK_HOSP_01"]}, client=graph)
+    assert any("SERVES_TIER_1" in r for r in hosp["reasons"])
+    assert any("TIER1_LOSES_SUPPLY" in r for r in hosp["reasons"])
+    too_much = evaluate_plan({"bess_dispatch": {"BESS_METRO_01": 90.0}}, client=graph)
+    assert any("EXCEEDS_MAX_DISCHARGE" in r for r in too_much["reasons"])
+    # Evaluation never writes: the breaker is still closed.
+    assert check_breaker("BRK_IND_12", graph)["currently_closed"] is True
+
+
+def test_trace_with_overrides(graph):
+    r = trace_cascade("TX_882", assume_tripped=[("TX_882", "UPPER_PRIMARY")], client=graph,
+                      overrides={"bess_injection_mw": {"BESS_METRO_01": 45.0}, "deenergized_consumers": ["IND_METRO_12"]})
+    assert r["summary"]["projection_outcome"] == "WITHIN_LIMITS"
+
+
+def test_benchmark_engines_agree(live_client, tmp_path, monkeypatch):
+    from graph.benchmark import run_benchmark
+    monkeypatch.setenv("GRIDPULSE_BENCH_DIR", str(tmp_path))
+    r = run_benchmark(1000, runs=3, origins=3, client=live_client)
+    assert r["results_verified_equal"] is True
+    assert r["median_reach_size"] > 10
+    for engine in ("falkordb_cypher", "falkordb_bfs", "sqlite_recursive"):
+        assert r["engines"][engine]["engine_time"]["median_ms"] > 0
+    assert r["n1_lodf"]["branches"] == r["grid"]["lines"]

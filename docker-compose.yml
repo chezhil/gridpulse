@@ -20,6 +20,8 @@ services:
       FALKORDB_PORT: "6379"
       PYTHONUNBUFFERED: "1"
       GRIDPULSE_AUDIT_DB: /app/data/audit_log.db
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GRIDPULSE_AGENT_MODEL: ${GRIDPULSE_AGENT_MODEL:-claude-opus-5-5}
     volumes:
       - ./data:/app/data
     depends_on:

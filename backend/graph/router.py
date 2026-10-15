@@ -17,12 +17,12 @@ GRAPH_DATA_INCOMPLETE       500     required properties missing on graph state
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Literal
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from . import queries
+from . import algorithms, benchmark, queries
 from .client import (
     GraphClient,
     GraphDataError,
@@ -85,6 +85,28 @@ class TraceCascadeRequest(BaseModel):
         description="Hypothetical trips layered on the stored state for the projection. Never written to the graph.",
     )
     threshold_pct: float = Field(queries.DEFAULT_THRESHOLD_PCT, ge=1, le=150)
+    overrides: Optional["WhatIfOverrides"] = None
+
+
+class WhatIfOverrides(BaseModel):
+    bess_injection_mw: Dict[str, float] = Field(default_factory=dict, examples=[{"BESS_METRO_01": 45.0}])
+    deenergized_consumers: List[str] = Field(default_factory=list, max_length=50, examples=[["IND_METRO_12"]])
+
+
+class PlanRequest(BaseModel):
+    trip_breakers: List[str] = Field(default_factory=list, max_length=20, examples=[["BRK_IND_12"]])
+    bess_dispatch: Dict[str, float] = Field(default_factory=dict, examples=[{"BESS_METRO_01": 45.0}])
+    threshold_pct: float = Field(queries.DEFAULT_THRESHOLD_PCT, ge=1, le=150)
+
+
+class BenchmarkRequest(BaseModel):
+    size: Literal[1000, 10000, 100000] = 1000
+    runs: int = Field(20, ge=1, le=200)
+    origins: int = Field(10, ge=1, le=50)
+    max_hops: int = Field(6, ge=2, le=16)
+
+
+TraceCascadeRequest.model_rebuild()
 
 
 @router.get("/topology")
@@ -103,8 +125,42 @@ def trace_cascade(body: TraceCascadeRequest, client: GraphClient = Depends(get_c
             assume_tripped=[t.model_dump() for t in body.assume_tripped],
             threshold_pct=body.threshold_pct,
             client=client,
+            overrides=body.overrides.model_dump() if body.overrides else None,
         )
     )
+
+
+@router.post("/contingency")
+def contingency(threshold_pct: float = 95.0, client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """N-1 scan: trip each energised circuit in turn and re-solve; tags circuits with the result."""
+    return _run(lambda: queries.run_contingency_scan(threshold_pct, write_back=True, client=client))
+
+
+@router.get("/criticality")
+def criticality(limit: int = 10, client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """Buses ranked by betweenness centrality (algo.betweenness), joined with N-1 tags."""
+    return _run(lambda: algorithms.criticality_ranking(limit, client))
+
+
+@router.get("/reroute")
+def reroute(
+    source_id: str = "HYDRO_ALPINE_01", target_id: str = "SUB_METRO", k: int = 3, client: GraphClient = Depends(get_client)
+) -> Dict[str, Any]:
+    """Lowest-impedance energised paths (algo.SPpaths), skipping tripped circuits."""
+    return _run(lambda: algorithms.reroute_paths(source_id, target_id, k, client=client))
+
+
+@router.post("/evaluate-plan")
+def evaluate_plan(body: PlanRequest, client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """What-if check of a mitigation plan against the actuation guards. Never actuates."""
+    plan = {"trip_breakers": body.trip_breakers, "bess_dispatch": body.bess_dispatch}
+    return _run(lambda: queries.evaluate_plan(plan, body.threshold_pct, client=client))
+
+
+@router.post("/benchmark")
+def run_benchmark(body: BenchmarkRequest, client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """Measured FalkorDB vs SQLite 6-hop trace on a synthetic meshed grid (results checked equal)."""
+    return _run(lambda: benchmark.run_benchmark(body.size, body.runs, body.origins, client, body.max_hops))
 
 
 @router.get("/health")

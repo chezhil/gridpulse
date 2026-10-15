@@ -16,7 +16,7 @@ cd ..
 GRIDPULSE_REQUIRE_FALKORDB=1 python -m pytest backend/graph/tests -q
 ```
 
-Without FalkorDB, the 30 integration tests are skipped and the 12 model/failure-mode tests still run. Set `GRIDPULSE_REQUIRE_FALKORDB=1` to make a missing database fail the run instead.
+Without FalkorDB, the integration tests are skipped and the pure model, power-flow and failure-mode tests still run. Set `GRIDPULSE_REQUIRE_FALKORDB=1` to make a missing database fail the run instead.
 
 Environment variables: `FALKORDB_HOST` (`localhost`), `FALKORDB_PORT` (`6379`), `FALKORDB_GRAPH` (`gridpulse`), `FALKORDB_USERNAME`, `FALKORDB_PASSWORD`, `FALKORDB_CONNECT_ATTEMPTS` (`5`), `FALKORDB_RETRY_BACKOFF_S` (`0.5`), `FALKORDB_QUERY_TIMEOUT_MS` (`2000`).
 
@@ -49,15 +49,16 @@ Circuit properties: `id, circuit, impedance_pu, limit_mw, flow_mw, sag_m, status
 
 Nominal values: total demand 840 MW, matching the hydro output. `SUB_METRO` capacity is 1000 MW. `BESS_METRO_01` is at 78% SOC with 60 MW maximum discharge. **The `LOWER_BACKUP` circuit is rated 800 MW** while `UPPER_PRIMARY` is rated 900 MW (the spec only gave 900). With both rated 900 MW, losing the primary would put 840 MW on a 900 MW circuit (93%), which is not an overload, so the lightning scenario would not be one either. Tower `world_x` values are spread evenly over x=520–5190. Replace them with the real coordinates from `index.html` if those differ.
 
-## Overload model (`radial-dc/1`)
+## Overload model (`dc-pf/1`)
 
-Reachability and overload are separate results. Being downstream of a fault is not an overload claim. Overloads come only from [`thermal.py`](thermal.py), a pure function of the graph snapshot:
+Reachability and overload are separate results. Being downstream of a fault is not an overload claim. Overloads come only from [`thermal.py`](thermal.py), a pure function of the graph snapshot, solved with the linear (DC) power flow in [`powerflow.py`](powerflow.py):
 
-- Each segment carries the net demand of every energised substation downstream of it. Net demand is energised consumer `mw_demand` minus BESS `active_injection_mw`.
-- Parallel energised circuits share that flow in proportion to `1/impedance_pu`. A tripped circuit carries 0.
-- A segment with no energised circuit islands everything downstream of it.
-- An element is at risk when its loading exceeds `threshold_pct` (default 95) of `limit_mw` / `capacity_mw`. Relief is the reduction in downstream net demand needed to get back under the threshold.
-- The model is lossless and steady-state, and treats the source as a slack bus. Thermal time constants and relay timing (the "90 s" narrative) are **not** modelled.
+- Energised circuits are branches with reactance `impedance_pu`. Flows come from the bus susceptance matrix, so parallel circuits **and meshed corridors** share flow by impedance. On the demo corridor this reduces to splitting each segment's flow by `1/impedance_pu`.
+- Each substation withdraws its net demand: energised consumer `mw_demand` minus BESS `active_injection_mw`. Substations not connected to the source through energised circuits are islanded.
+- An element is at risk when its loading exceeds `threshold_pct` (default 95) of `limit_mw` / `capacity_mw`.
+- Relief uses PTDF sensitivities. Each overload lists `relief_options`: the demand reduction at each sensitive substation that clears it. `required_relief_mw` is the largest per-element best option. If nothing can relieve an overload, `relief_feasible` is false and `required_relief_mw` is null.
+- What-if `overrides` (`bess_injection_mw`, `deenergized_consumers`) and `assume_tripped` are layered on the stored state and never written.
+- The model is lossless and steady-state, and treats the first source as a slack bus. Thermal time constants and relay timing (the "90 s" narrative) are **not** modelled.
 
 What the model produces for the three scenarios, all covered by tests:
 
@@ -109,7 +110,7 @@ Real response from this branch, trimmed:
                               "overloaded_supply_circuits": ["TX_882:LOWER_BACKUP"], "...": "..."}],
              "consumers": [{"id": "IND_METRO_12", "priority_tier": 3, "breaker_id": "BRK_IND_12", "risk": "OVERLOAD_RISK", "...": "..."}],
              "bess": [{"id": "BESS_METRO_01", "soc_pct": 78.0, "max_discharge_mw": 60.0, "...": "..."}]},
-  "projection": {"model": "radial-dc/1", "outcome": "OVERLOAD_PREDICTED", "required_relief_mw": 80.0,
+  "projection": {"model": "dc-pf/1", "outcome": "OVERLOAD_PREDICTED", "required_relief_mw": 80.0,
                  "overloads": [{"element": "TX_882:LOWER_BACKUP", "kind": "CIRCUIT", "loading_pct": 105.0, "relief_mw": 80.0}],
                  "circuits": ["...18 rows..."], "substations": ["..."], "islanded_substations": [], "assumptions": ["..."]},
   "evidence": [{"name": "trace_reachability", "cypher": "MATCH (o) WHERE o.id = $start_id ...", "params": {"start_id": "T4"},
@@ -222,18 +223,40 @@ app.include_router(graph.router)    # /api/graph/topology, /api/graph/trace-casc
 - Draw from `spans[]` in `/api/graph/topology`.
 - The Cypher inspector can show `evidence[].cypher`, `params`, `row_count` and `server_ms` from the trace.
 
-## Measured timings (this branch, local Docker on macOS, 50 warm runs)
+## N-1, graph algorithms and plan evaluation
 
-These are for the lightning trace with `assume_tripped`. `graph_server_ms` is FalkorDB's reported execution time summed over the trace's 4 queries:
+| Endpoint / function | What it does |
+| --- | --- |
+| `POST /api/graph/contingency` / `run_contingency_scan()` | Trips each energised circuit in turn and re-solves. It returns every contingency's outcome and worst element, and tags each circuit with `n1_outcome`, `n1_worst_element`, `n1_worst_loading_pct` and `n1_state_version`. Reset clears the tags. **Demo result: the grid is not N-1 secure.** Losing any of the 9 primaries puts 840 MW on an 800 MW backup (105%), while losing any backup is secure. |
+| `GET /api/graph/criticality` / `criticality_ranking()` | `algo.betweenness` over buses, joined with N-1 tags. T5 (mid-corridor) ranks first. |
+| `GET /api/graph/reroute` / `reroute_paths()` | `algo.SPpaths` k lowest-impedance paths, dropping any that cross a tripped circuit. After the lightning trip, the best path uses `TX_882:LOWER_BACKUP`. |
+| `POST /api/graph/evaluate-plan` / `evaluate_plan()` | A what-if check of `{trip_breakers, bess_dispatch}` against the same guards actuation uses: breaker guard, SOC and discharge limits, Tier-1 supply, and a projection within limits. Returns `APPROVED` or `REJECTED` with reasons. It never actuates. |
 
-| | median | p95 |
-| --- | --- | --- |
-| `graph_server_ms` (4 queries) | 1.43 ms | 1.91 ms |
-| `trace_reachability` alone | 0.63 ms | 0.95 ms |
-| `graph_roundtrip_ms` (client-measured) | 4.97 ms | 6.34 ms |
-| `engine_total_ms` (incl. model) | 5.27 ms | 6.73 ms |
+## Measured timings (local Docker on macOS)
 
-A full reset/seed takes about 3.4 ms of FalkorDB server time. Expect different numbers on other machines.
+The demo lightning trace (`assume_tripped`, 50 warm runs) takes 1.43 ms median (p95 1.91 ms) of FalkorDB server time across its 4 queries. The client round trip is 4.97 ms, and the full engine time including the model is 5.27 ms. A full reset or seed takes about 3.4 ms of server time.
+
+### Graph vs SQL benchmark (`POST /api/graph/benchmark`, `python -m backend.graph.benchmark`)
+
+Each grid is a deterministic synthetic mesh (lattice plus random diagonal ties, [`synthetic.py`](synthetic.py)) loaded into FalkorDB and into SQLite with an index on `line(src)`. The query is "all buses within N hops downstream". Before any timing is reported, all three engines' result sets are checked to be identical. The table shows median engine time over 30 runs. FalkorDB times are what the server reports; SQLite runs in-process, so it has no network hop.
+
+| Grid | Hops (reach) | FalkorDB Cypher `*1..N` | FalkorDB `algo.BFS` (GraphBLAS) | SQLite recursive CTE |
+| --- | --- | --- | --- | --- |
+| 992 buses / 2.1k lines | 6 (35 buses) | 0.031 ms | 0.044 ms | 0.045 ms |
+| 992 / 2.1k | 10 (90) | 0.298 ms | 0.065 ms | 0.131 ms |
+| 10k / 21.8k | 6 (33) | 0.035 ms | 0.400 ms | 0.046 ms |
+| 10k / 21.8k | 10 (84) | 0.295 ms | 0.418 ms | 0.121 ms |
+| 99.9k / 219k | 6 (35) | 0.043 ms | 1.913 ms | 0.058 ms |
+| 99.9k / 219k | 10 (87) | 0.379 ms | 2.243 ms | 0.162 ms |
+
+What this shows, honestly:
+- Every engine answers a local 6-hop trace in well under a millisecond, and graph size barely matters because the traversal only touches its neighbourhood. **The landing page's "1.4 ms vs >450 ms SQL" claim is not reproduced.** An indexed recursive CTE is competitive.
+- Cypher variable-length paths enumerate paths, so their cost grows with hop depth.
+- `algo.BFS` works on the whole adjacency matrix, so its cost grows with graph size. It wins on deep traversals of small graphs.
+
+The graph engine's real advantage here is the model: traversal, betweenness, k-shortest paths and the power-flow inputs all come from one property graph, without join plumbing.
+
+For grids of at most 2,500 buses the benchmark also runs a vectorised **N-1 scan with LODFs**. For the 992-bus mesh it takes 37 ms to factorise and 47 ms to evaluate all 2,103 outages. LODF results match exact re-solves to within about 1e-12 MW (`test_powerflow.py`).
 
 ## Open contract questions
 

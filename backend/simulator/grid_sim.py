@@ -1,4 +1,4 @@
-"""Single simulator state; graph topology and radial-dc/1 model are canonical.
+"""Single simulator state; graph topology and dc-pf/1 model are canonical.
 
 This is a deterministic educational simulator, not a validated power-flow or
 thermal solver. Scenario time is for UI presentation; query times are measured.
@@ -93,13 +93,23 @@ class GridSimulator:
             'spans': list(self._spans.values()), 'towers': list(self._towers.values()),
             'substation': self._substation, 'bess': self._bess, 'consumers': list(self._consumers.values()),
             'active_cypher': self._active_cypher, 'agent_log': self._agent_log, 'evidence': self._evidence,
-            'simulation_model': 'radial-dc/1'})
+            'simulation_model': 'dc-pf/1'})
 
     def record(self, action, target, reason, outcome='SUCCESS', evidence=None, requested_action=None,
                operator_id='SCADA_MCP_AGENT'):
         return audit_logger.log_event(event_id=uuid.uuid4().hex, run_id=self._run_id,
             scenario_id=self._scenario_id, target=target, action=action, reason=reason,
-            outcome=outcome, evidence=evidence, requested_action=requested_action, operator_id=operator_id)
+            outcome=outcome, evidence=evidence, requested_action=requested_action, operator_id=operator_id,
+            state_version=self._graph_state_version())
+
+    @staticmethod
+    def _graph_state_version():
+        # The graph state an action was based on; None when the graph is unreachable.
+        from backend import graph
+        try:
+            return graph.read_state_version()
+        except graph.GraphError:
+            return None
 
     async def _cancel(self):
         if self._active_task and not self._active_task.done():
@@ -123,13 +133,13 @@ class GridSimulator:
             self._active_cypher = ''
             self._evidence = []
             try:
-                graph.reset_grid()
+                await asyncio.to_thread(graph.reset_grid)
                 self._agent_log = 'Simulator and FalkorDB reset to nominal. Audit history preserved.'
-                self.record('GRID_RESET', 'GRID_TOPOLOGY', self._agent_log, operator_id=operator_id)
+                await asyncio.to_thread(self.record, 'GRID_RESET', 'GRID_TOPOLOGY', self._agent_log, operator_id=operator_id)
             except Exception as exc:
                 self._scenario_status = 'FAILED'
                 self._agent_log = f'Reset incomplete: {exc}'
-                self.record('GRID_RESET', 'GRID_TOPOLOGY', str(exc), 'FAILED', operator_id=operator_id)
+                await asyncio.to_thread(self.record, 'GRID_RESET', 'GRID_TOPOLOGY', str(exc), 'FAILED', operator_id=operator_id)
                 raise
             return self.get_snapshot()
 
@@ -146,13 +156,14 @@ class GridSimulator:
             if self._scenario_id:
                 raise ValueError('Reset the grid before starting another scenario')
             # Fail before injecting a fault if the graph cannot be reached.
-            graph.init_graph()
-            graph.apply_state_update(self.graph_update())
+            # Blocking graph I/O runs off the event loop; the lock keeps state consistent.
+            await asyncio.to_thread(graph.init_graph)
+            await asyncio.to_thread(graph.apply_state_update, self.graph_update())
             self._run_id = uuid.uuid4().hex
             self._scenario_id = scenario_id
             self._scenario_name = {1: 'LIGHTNING_STRIKE_TX882', 2: 'WILDFIRE_IONIZATION_T5_T6',
                                    3: 'HEATWAVE_PEAK_SURGE_120PCT'}[scenario_id]
-            self.record('SCENARIO_TRIGGER', f'SCENARIO_{scenario_id}', self._scenario_name,
+            await asyncio.to_thread(self.record, 'SCENARIO_TRIGGER', f'SCENARIO_{scenario_id}', self._scenario_name,
                         operator_id=operator_id, requested_action={'scenario_id': scenario_id})
             self._scenario_status = 'FAULT_DETECTED'
             self._active_task = asyncio.create_task(get_interceptor().run(self._run_id, scenario_id))
