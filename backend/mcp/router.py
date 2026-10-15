@@ -86,7 +86,7 @@ class AdviseRequest(BaseModel):
 
 @router.post('/api/mcp/agent/advise')
 async def agent_advise(req: AdviseRequest, session=Depends(verify_operator_token)):
-    """Claude investigates with read-only graph tools and proposes a plan; the graph guard decides."""
+    """An LLM (Groq) investigates with read-only graph tools and proposes a plan; the graph guard decides."""
     from backend import graph
     from backend.mcp import agent
     if req.execute and session.role != 'operator':

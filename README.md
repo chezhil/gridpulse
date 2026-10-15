@@ -60,12 +60,12 @@ Stop the Compose backend first (`docker compose stop backend`) before starting a
 - **Graph algorithms**: `GET /api/graph/criticality` (betweenness centrality) and `GET /api/graph/reroute` (k lowest-impedance energised paths via `algo.SPpaths`).
 - **What-if plans**: `POST /api/graph/evaluate-plan` checks `{trip_breakers, bess_dispatch}` against the actuation guards without actuating.
 - **Graph vs SQL benchmark**: `POST /api/graph/benchmark` and `python -m backend.graph.benchmark --sizes 1000 10000 100000 --hops 6 10`. The measured results, including where SQL is as fast or faster, are in `backend/graph/README.md`.
-- **Claude advisor**: `POST /api/mcp/agent/advise` (any logged-in role; `{"execute": true}` requires the operator role).
-  - Claude (`claude-opus-5-5`, override with `GRIDPULSE_AGENT_MODEL`) investigates with read-only graph tools and must submit a plan.
+- **LLM advisor (Groq)**: `POST /api/mcp/agent/advise` (any logged-in role; `{"execute": true}` requires the operator role).
+  - A Groq-hosted model (`openai/gpt-oss-120b` by default, override with `GRIDPULSE_AGENT_MODEL`) investigates with read-only graph tools through function calling, and must submit a plan.
   - `evaluate_plan` then validates the plan deterministically, and the proposal is audited as `AGENT_PROPOSAL`.
   - Execution re-checks against current state and goes through the guarded SCADA tools; the model's output alone never authorizes anything.
-  - Server-side refusal fallback is enabled.
-  - Requires `ANTHROPIC_API_KEY`; without it the endpoint returns 503 `AGENT_UNAVAILABLE`.
+  - Malformed tool calls are retried or returned to the model as tool errors.
+  - Requires `GROQ_API_KEY`; without it the endpoint returns 503 `AGENT_UNAVAILABLE`.
 - **Audit chain**: each audit record stores `seq`, `prev_hash`, `record_hash` and the graph `state_version` the action was based on. `GET /api/audit/verify` recomputes the chain and reports the first broken link. Older databases are migrated in place, and their pre-chain rows are reported as `legacy_unchained`.
 - **Event loop**: graph and SQLite work in scenario, reset and tool paths runs in worker threads while the simulator lock is held, so WebSocket telemetry keeps flowing during a run.
 - **Tests and CI**: `.github/workflows/ci.yml` runs the full suite against a FalkorDB service container on every push and pull request. Coverage includes:

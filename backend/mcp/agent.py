@@ -1,6 +1,6 @@
-"""Claude advisory agent: the model investigates, the graph decides.
+"""LLM advisory agent (Groq): the model investigates, the graph decides.
 
-Claude gets read-only graph tools (trace, mitigation discovery, breaker guard,
+The model gets read-only graph tools (trace, mitigation discovery, breaker guard,
 Tier-1 audit, reroute paths, criticality, plan evaluation) and must finish by
 calling ``submit_plan``. The proposed plan is then checked deterministically
 by :func:`graph.evaluate_plan` - the same guards actuation uses. Nothing the
@@ -8,7 +8,9 @@ model says can authorize an action: execution (opt-in, operator role only)
 re-evaluates the plan against current state and goes through the guarded
 SCADA tools, each of which re-checks the graph and writes audit records.
 
-Requires Anthropic credentials (``ANTHROPIC_API_KEY`` or an ``ant auth`` profile).
+Uses Groq's chat completions API with function calling. Requires
+``GROQ_API_KEY``; the model is ``GRIDPULSE_AGENT_MODEL`` (default
+``openai/gpt-oss-120b``).
 """
 from __future__ import annotations
 
@@ -19,9 +21,11 @@ from typing import Any, Callable, Dict, List, Optional
 
 from backend import graph
 
-MODEL = os.environ.get('GRIDPULSE_AGENT_MODEL', 'claude-opus-5-5')
+MODEL = os.environ.get('GRIDPULSE_AGENT_MODEL', 'openai/gpt-oss-120b')
 MAX_TURNS = 12
-MAX_TOKENS = 16000
+MAX_TOKENS = 8192
+# Groq occasionally rejects a malformed tool call (400 tool_use_failed); retry the turn this many times.
+TOOL_CALL_RETRIES = 2
 
 SYSTEM_PROMPT = """You are the GridPulse grid-security advisor for a 500 kV corridor feeding a metropolitan substation.
 Your job: investigate the current grid state with the tools, then propose the smallest mitigation that brings every
@@ -53,9 +57,10 @@ def _slim(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _tool(name: str, description: str, properties: Dict[str, Any], required: List[str]) -> Dict[str, Any]:
-    return {'name': name, 'description': description,
-            'input_schema': {'type': 'object', 'properties': properties, 'required': required,
-                             'additionalProperties': False}}
+    return {'type': 'function', 'function': {
+        'name': name, 'description': description,
+        'parameters': {'type': 'object', 'properties': properties, 'required': required,
+                       'additionalProperties': False}}}
 
 
 CIRCUIT_REF = {'type': 'object', 'properties': {'span_id': {'type': 'string'},
@@ -107,7 +112,7 @@ HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
 
 
 class AgentUnavailable(RuntimeError):
-    """No usable Anthropic client (missing credentials or SDK)."""
+    """No usable model client (missing credentials or SDK)."""
 
 
 class AgentFailed(RuntimeError):
@@ -116,37 +121,38 @@ class AgentFailed(RuntimeError):
 
 def make_client():
     try:
-        import anthropic
+        import groq
     except ImportError as exc:
-        raise AgentUnavailable('anthropic SDK not installed; install backend/requirements.txt') from exc
+        raise AgentUnavailable('groq SDK not installed; install backend/requirements.txt') from exc
     try:
-        return anthropic.Anthropic()
-    except anthropic.AnthropicError as exc:
-        raise AgentUnavailable(f'Anthropic client could not be created: {exc}') from exc
+        return groq.Groq()
+    except groq.GroqError as exc:
+        raise AgentUnavailable('No Groq credentials configured; set GROQ_API_KEY') from exc
 
 
 def _create(client, messages):
-    import anthropic
-    kwargs = dict(model=MODEL, max_tokens=MAX_TOKENS, system=SYSTEM_PROMPT, tools=TOOLS, messages=messages,
-                  output_config={'effort': 'medium'})
-    try:
-        # Server-side refusal fallback: a policy decline is re-run on a fallback model within the same call.
-        return client.beta.messages.create(betas=['server-side-fallback-2026-07-01'], fallbacks='default', **kwargs)
-    except TypeError as exc:
-        # The SDK raises TypeError when no API key, token or profile can be resolved.
-        if 'authentication' in str(exc).lower():
-            raise AgentUnavailable('No Anthropic credentials configured; set ANTHROPIC_API_KEY') from exc
-        raise
-    except anthropic.AuthenticationError as exc:
-        raise AgentUnavailable('Anthropic credentials missing or invalid; set ANTHROPIC_API_KEY') from exc
-    except anthropic.PermissionDeniedError as exc:
-        raise AgentUnavailable(f'Anthropic API key lacks permission: {exc.message}') from exc
-    except anthropic.RateLimitError as exc:
-        raise AgentFailed('Anthropic rate limit reached; retry shortly') from exc
-    except anthropic.APIStatusError as exc:
-        raise AgentFailed(f'Anthropic API error {exc.status_code}: {exc.message}') from exc
-    except anthropic.APIConnectionError as exc:
-        raise AgentFailed('Could not reach the Anthropic API') from exc
+    import groq
+    kwargs = dict(model=MODEL, messages=messages, tools=TOOLS, tool_choice='auto',
+                  max_completion_tokens=MAX_TOKENS, temperature=0.2)
+    if MODEL.startswith('openai/gpt-oss'):
+        kwargs['reasoning_effort'] = 'medium'
+    for attempt in range(TOOL_CALL_RETRIES + 1):
+        try:
+            return client.chat.completions.create(**kwargs)
+        except groq.BadRequestError as exc:
+            if 'tool_use_failed' in str(exc) and attempt < TOOL_CALL_RETRIES:
+                continue
+            raise AgentFailed(f'Groq rejected the request: {exc.message}') from exc
+        except groq.AuthenticationError as exc:
+            raise AgentUnavailable('Groq credentials missing or invalid; set GROQ_API_KEY') from exc
+        except groq.PermissionDeniedError as exc:
+            raise AgentUnavailable(f'Groq API key lacks permission: {exc.message}') from exc
+        except groq.RateLimitError as exc:
+            raise AgentFailed('Groq rate limit reached; retry shortly') from exc
+        except groq.APIStatusError as exc:
+            raise AgentFailed(f'Groq API error {exc.status_code}: {exc.message}') from exc
+        except groq.APIConnectionError as exc:
+            raise AgentFailed('Could not reach the Groq API') from exc
 
 
 def advise(question: Optional[str] = None, client=None) -> Dict[str, Any]:
@@ -155,46 +161,56 @@ def advise(question: Optional[str] = None, client=None) -> Dict[str, Any]:
     started = time.perf_counter()
     prompt = question or ('Assess the current grid state. Identify any projected overloads or islanding and '
                           'propose a mitigation plan.')
-    messages: List[Dict[str, Any]] = [{'role': 'user', 'content': prompt}]
+    messages: List[Dict[str, Any]] = [{'role': 'system', 'content': SYSTEM_PROMPT},
+                                      {'role': 'user', 'content': prompt}]
     calls: List[Dict[str, Any]] = []
     usage = {'input_tokens': 0, 'output_tokens': 0}
     submitted = None
     for _turn in range(MAX_TURNS):
         response = _create(client, messages)
-        usage['input_tokens'] += getattr(response.usage, 'input_tokens', 0) or 0
-        usage['output_tokens'] += getattr(response.usage, 'output_tokens', 0) or 0
-        if response.stop_reason == 'refusal':
-            raise AgentFailed('The model declined this request')
-        if response.stop_reason == 'max_tokens':
-            raise AgentFailed('The model response was cut off at max_tokens')
-        messages.append({'role': 'assistant', 'content': response.content})
-        tool_uses = [b for b in response.content if b.type == 'tool_use']
-        if not tool_uses:
-            if response.stop_reason == 'pause_turn':
-                continue
+        if response.usage is not None:
+            usage['input_tokens'] += response.usage.prompt_tokens or 0
+            usage['output_tokens'] += response.usage.completion_tokens or 0
+        choice = response.choices[0]
+        if choice.finish_reason == 'length':
+            raise AgentFailed('The model response was cut off at max_completion_tokens')
+        message = choice.message
+        tool_calls = message.tool_calls or []
+        messages.append({'role': 'assistant', 'content': message.content or '',
+                         **({'tool_calls': [{'id': tc.id, 'type': 'function',
+                                             'function': {'name': tc.function.name,
+                                                          'arguments': tc.function.arguments}}
+                                            for tc in tool_calls]} if tool_calls else {})})
+        if not tool_calls:
             messages.append({'role': 'user', 'content': 'Finish by calling submit_plan with your proposal.'})
             continue
-        results = []
-        for block in tool_uses:
-            args = block.input if isinstance(block.input, dict) else {}
-            if block.name == 'submit_plan':
-                submitted = args
-                results.append({'type': 'tool_result', 'tool_use_id': block.id, 'content': 'Plan received.'})
+        for tc in tool_calls:
+            name = tc.function.name
+            try:
+                args = json.loads(tc.function.arguments or '{}')
+                if not isinstance(args, dict):
+                    raise ValueError('arguments must be a JSON object')
+            except ValueError as exc:
+                calls.append({'tool': name, 'input': tc.function.arguments, 'error': f'invalid arguments: {exc}'})
+                messages.append({'role': 'tool', 'tool_call_id': tc.id, 'name': name,
+                                 'content': f'ERROR: invalid JSON arguments ({exc}); call the tool again.'})
                 continue
-            handler = HANDLERS.get(block.name)
+            if name == 'submit_plan':
+                submitted = args
+                messages.append({'role': 'tool', 'tool_call_id': tc.id, 'name': name, 'content': 'Plan received.'})
+                continue
+            handler = HANDLERS.get(name)
             try:
                 if handler is None:
-                    raise ValueError(f'unknown tool {block.name}')
+                    raise ValueError(f'unknown tool {name}')
                 result = handler(args)
-                calls.append({'tool': block.name, 'input': args,
+                calls.append({'tool': name, 'input': args,
                               'evidence_hashes': [e.get('evidence_hash') for e in result.get('evidence', [])]})
-                results.append({'type': 'tool_result', 'tool_use_id': block.id,
-                                'content': json.dumps(_slim(result), default=str)})
+                content = json.dumps(_slim(result), default=str)
             except Exception as exc:  # graph errors go back to the model as tool errors
-                calls.append({'tool': block.name, 'input': args, 'error': str(exc)})
-                results.append({'type': 'tool_result', 'tool_use_id': block.id, 'is_error': True,
-                                'content': getattr(exc, 'message', None) or str(exc)})
-        messages.append({'role': 'user', 'content': results})
+                calls.append({'tool': name, 'input': args, 'error': str(exc)})
+                content = 'ERROR: ' + (getattr(exc, 'message', None) or str(exc))
+            messages.append({'role': 'tool', 'tool_call_id': tc.id, 'name': name, 'content': content})
         if submitted is not None:
             break
     if submitted is None:
@@ -204,6 +220,7 @@ def advise(question: Optional[str] = None, client=None) -> Dict[str, Any]:
             'bess_dispatch': dict(submitted.get('bess_dispatch') or {})}
     validation = graph.evaluate_plan(plan)
     return {
+        'provider': 'groq',
         'model': MODEL,
         'summary': submitted.get('summary', ''),
         'rationale': submitted.get('rationale', ''),

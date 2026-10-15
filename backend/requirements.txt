@@ -4,5 +4,5 @@ pydantic>=2.5,<3
 falkordb>=1.8,<2
 
 mcp==1.30.0
-anthropic>=1.10,<2
+groq>=1.0,<2
 numpy>=1.26,<3
