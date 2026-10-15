@@ -137,3 +137,13 @@ def reroute(network_id: str, source_id: str, target_id: str, k: int = 3,
             session: OperatorSession = Depends(verify_operator_token)) -> Dict[str, Any]:
     return _run(lambda: algorithms.reroute_paths(source_id, target_id, k,
                                                  client=networks.owned_client(session.operator_id, network_id)))
+
+
+@networks_router.get("/{network_id}/islands")
+def islands(network_id: str, session: OperatorSession = Depends(verify_operator_token)) -> Dict[str, Any]:
+    return _run(lambda: algorithms.connected_components(networks.owned_client(session.operator_id, network_id)))
+
+
+@networks_router.get("/{network_id}/zones")
+def zones(network_id: str, session: OperatorSession = Depends(verify_operator_token)) -> Dict[str, Any]:
+    return _run(lambda: algorithms.zones(networks.owned_client(session.operator_id, network_id)))

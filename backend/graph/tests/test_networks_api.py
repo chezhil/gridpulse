@@ -53,3 +53,15 @@ def test_network_lifecycle_over_http(api):
     assert api.get(f"/api/networks/{nid}/reroute", headers=alice, params={"source_id": "HYDRO_ALPINE_01", "target_id": "SUB_METRO"}).json()["outcome"] == "PATHS_FOUND"
     assert api.delete(f"/api/networks/{nid}", headers=alice).json() == {"deleted": nid}
     assert api.get(f"/api/networks/{nid}", headers=alice).status_code == 404
+
+
+def test_custom_network_trace_with_custom_span_ids(api):
+    alice = login(api, "TRACE_HTTP")
+    nid = api.post("/api/networks", headers=alice, json={"template": "meshed_city"}).json()["id"]
+    r = api.post(f"/api/networks/{nid}/trace", headers=alice,
+                 json={"origin_id": "ML1", "assume_tripped": [{"span_id": "ML1", "circuit": "UPPER_PRIMARY"}]})
+    assert r.status_code == 200, r.text
+    assert r.json()["projection"]["assumed_tripped"] == [{"span_id": "ML1", "circuit": "UPPER_PRIMARY"}]
+    assert api.get(f"/api/networks/{nid}/islands", headers=alice).json()["connected"] is True
+    assert api.get(f"/api/networks/{nid}/zones", headers=alice).json()["zones"]
+    api.delete(f"/api/networks/{nid}", headers=alice)

@@ -56,7 +56,7 @@ def _run(fn: Callable[[], Dict[str, Any]]) -> Dict[str, Any]:
 
 
 class CircuitRef(BaseModel):
-    span_id: str = Field(pattern=r"^TX_\d{3}$", examples=["TX_882"])
+    span_id: str = Field(pattern=r"^[A-Z0-9_]{1,40}$", examples=["TX_882"])
     circuit: Literal["UPPER_PRIMARY", "LOWER_BACKUP"]
 
 

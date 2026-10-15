@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GridPulse Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<style>
+:root{--bg:#040814;--panel:#0b1222;--panel2:#101a30;--line:#1e2a44;--text:#e6edf7;--muted:#8a9bb8;--cyan:#38bdf8;--green:#10b981;--amber:#f59e0b;--red:#ef4444;--purple:#a855f7;--mono:'JetBrains Mono',ui-monospace,monospace}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Inter,system-ui,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px solid var(--line);background:#060c1a;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+header h1{font:700 18px 'Space Grotesk',sans-serif;margin:0;letter-spacing:-.02em}header h1 span{color:var(--cyan)}
+.tag{font:500 11px var(--mono);color:var(--amber);border:1px solid #5b3d0a;padding:2px 6px;border-radius:6px}
+nav{display:flex;gap:4px;flex-wrap:wrap}nav button{background:none;border:1px solid transparent;color:var(--muted);padding:6px 10px;border-radius:8px;cursor:pointer;font:500 13px Inter}
+nav button.on{color:var(--text);background:var(--panel2);border-color:var(--line)}
+#auth{margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+main{padding:16px;max-width:1500px;margin:0 auto}section{display:none}section.on{display:block}
+.grid{display:grid;gap:14px}.g2{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:1000px){.g2,.g3{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+.card h2{font:600 15px 'Space Grotesk',sans-serif;margin:0 0 10px}.card h3{font:600 13px Inter;margin:12px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+button.b,select,input,textarea{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:13px Inter}
+button.b{cursor:pointer}button.b:hover{border-color:var(--cyan)}button.p{background:#0c4a6e;border-color:#0e7490}button.d{border-color:#7f1d1d;color:#fecaca}
+button.b:disabled{opacity:.5;cursor:not-allowed}
+textarea{width:100%;font:12px var(--mono);min-height:260px}input[type=number]{width:90px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.cy{height:460px;background:#050b18;border:1px solid var(--line);border-radius:10px}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}.kpi div{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.kpi b{display:block;font:600 18px 'Space Grotesk'}.kpi small{color:var(--muted);font-size:11px;text-transform:uppercase}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600}
+.mono{font-family:var(--mono);font-size:12px}.muted{color:var(--muted)}.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
+.pill{display:inline-block;padding:1px 7px;border-radius:999px;font:600 11px var(--mono);border:1px solid var(--line)}
+.pill.ok{border-color:#065f46}.pill.bad{border-color:#7f1d1d}.pill.warn{border-color:#78350f}
+.steps{max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.step{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--cyan);border-radius:8px;padding:7px 9px}
+.step.verdict{border-left-color:var(--purple)}.step.fallback,.step.tool_error{border-left-color:var(--amber)}.step.done{border-left-color:var(--green)}
+pre{white-space:pre-wrap;word-break:break-word;font:11.5px var(--mono);background:#050b18;border:1px solid var(--line);border-radius:8px;padding:8px;max-height:260px;overflow:auto;margin:6px 0 0}
+details summary{cursor:pointer;color:var(--muted);font-size:12px}
+#toast{position:fixed;bottom:16px;right:16px;max-width:460px;background:#1f0a0a;border:1px solid #7f1d1d;color:#fecaca;padding:10px 12px;border-radius:10px;display:none;z-index:9;font-size:13px}
+#toast.info{background:#06202a;border-color:#0e7490;color:#cffafe}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:6px}.legend i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:4px}
+.case{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px;margin:6px 0}
+.small{font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Grid<span>Pulse</span> Lab</h1><span class="tag">TEMPORARY UI</span>
+  <nav id="tabs">
+    <button data-t="live" class="on">Live Ops</button><button data-t="builder">Network Builder</button>
+    <button data-t="sim">Test Cases</button><button data-t="analysis">Analysis</button>
+    <button data-t="agent">AI Advisor</button><button data-t="memory">Memory</button>
+    <button data-t="bench">Benchmark</button><button data-t="audit">Audit</button>
+  </nav>
+  <div id="auth">
+    <span id="who">not signed in</span>
+    <select id="role"><option value="operator">operator</option><option value="engineer">engineer</option><option value="auditor">auditor</option></select>
+    <input id="user" placeholder="username" size="10" value="LAB_OPERATOR">
+    <button class="b p" id="login">Sign in (demo)</button>
+  </div>
+</header>
+<main>
+
+<!-- LIVE OPS -->
+<section id="live" class="on">
+  <div class="grid g2">
+    <div class="card">
+      <h2>Live grid (FalkorDB topology + telemetry)</h2>
+      <div class="row">
+        <select id="mode"><option value="deterministic">Deterministic pipeline</option><option value="agent">AI operator (agent mode)</option></select>
+        <button class="b p" data-scn="1">⚡ Lightning TX_882</button><button class="b p" data-scn="2">🔥 Wildfire TX_884</button>
+        <button class="b p" data-scn="3">🌡 Heatwave +20%</button><button class="b d" id="reset">Reset grid</button>
+        <span id="ws" class="pill">telemetry: off</span>
+      </div>
+      <div id="cyLive" class="cy"></div>
+      <div class="legend"><span><i style="background:#38bdf8"></i>energized</span><span><i style="background:#ef4444"></i>tripped / overloaded</span><span><i style="background:#10b981"></i>rerouted (BESS)</span><span><i style="background:#64748b"></i>shed load</span></div>
+    </div>
+    <div class="grid">
+      <div class="card"><h2>Status</h2><div class="kpi" id="kpi"></div><p id="agentLog" class="small muted"></p></div>
+      <div class="card"><h2>Agent / pipeline steps</h2><div class="steps" id="steps"><span class="muted small">Run a scenario. In agent mode each tool call, its Cypher and the graph guard's verdict appear here.</span></div></div>
+      <div class="card"><h2>Graph memory used</h2><div id="liveMemory" class="small muted">—</div></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px"><h2>Active Cypher</h2><pre id="cypher">—</pre></div>
+</section>
+
+<!-- BUILDER -->
+<section id="builder">
+  <div class="grid g2">
+    <div class="card">
+      <h2>Your networks</h2>
+      <div class="row">
+        <select id="netSel"></select><button class="b" id="netRefresh">↻</button>
+        <select id="tplSel"></select><button class="b p" id="netCreate">Create from template</button>
+        <button class="b p" id="netBlank">New blank</button><button class="b d" id="netDelete">Delete</button>
+      </div>
+      <div id="cyNet" class="cy"></div>
+      <p class="small muted" id="netInfo">Each network is stored in its own FalkorDB graph (multi-graph isolation per owner).</p>
+    </div>
+    <div class="card">
+      <h2>Edit network</h2>
+      <div class="row small">
+        <select id="addKind">
+          <option value="buses">Bus</option><option value="substations">Substation</option><option value="generators">Generator</option>
+          <option value="lines">Line</option><option value="loads">Load</option><option value="batteries">Battery</option>
+        </select>
+        <span id="addFields" class="row"></span><button class="b" id="addEl">Add</button>
+      </div>
+      <textarea id="spec" spellcheck="false"></textarea>
+      <div class="row"><button class="b" id="specValidate">Validate</button><button class="b p" id="specSave">Save to FalkorDB</button><span id="specMsg" class="small"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- SIM -->
+<section id="sim">
+  <div class="grid g2">
+    <div class="card">
+      <h2>Test cases on <span id="simNet" class="mono">(pick a network in Network Builder)</span></h2>
+      <div class="row small">
+        <button class="b" id="addCase">+ Case</button><button class="b" id="presetCases">Presets</button>
+        <label>threshold % <input type="number" id="thr" value="95" min="50" max="150"></label>
+        <button class="b p" id="runCases">Run simulation</button>
+      </div>
+      <div id="cases"></div>
+    </div>
+    <div class="card"><h2>Network view</h2><div id="cySim" class="cy"></div>
+      <div class="legend"><span><i style="background:#ef4444"></i>overloaded</span><span><i style="background:#64748b"></i>tripped by case</span><span><i style="background:#f59e0b"></i>islanded / shed</span><span><i style="background:#a855f7"></i>Tier-1</span></div></div>
+  </div>
+  <div class="card" style="margin-top:14px"><h2>Results</h2><div id="simOut" class="small muted">No run yet.</div></div>
+</section>
+
+<!-- ANALYSIS -->
+<section id="analysis">
+  <div class="row"><label>Target <select id="anTarget"><option value="live">Live demo grid</option></select></label></div>
+  <div class="grid g3">
+    <div class="card"><h2>N-1 security scan</h2><button class="b p" id="anN1">Run N-1</button><div id="anN1Out" class="small"></div></div>
+    <div class="card"><h2>Criticality (algo.betweenness)</h2><button class="b p" id="anCrit">Rank buses</button><div id="anCritOut" class="small"></div></div>
+    <div class="card"><h2>Islands (algo.WCC) & zones (labelPropagation)</h2><button class="b p" id="anIsl">Find</button><div id="anIslOut" class="small"></div></div>
+  </div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><h2>Reroute paths (algo.SPpaths)</h2>
+      <div class="row"><input id="rrFrom" placeholder="source id" value="HYDRO_ALPINE_01"><input id="rrTo" placeholder="target id" value="SUB_METRO"><button class="b p" id="anRr">Find paths</button></div>
+      <div id="anRrOut" class="small"></div></div>
+    <div class="card"><h2>Blast-radius trace</h2>
+      <div class="row"><input id="trOrigin" value="TX_882" placeholder="span or node id"><label class="small"><input type="checkbox" id="trTrip" checked> assume its primary circuit trips</label><button class="b p" id="anTrace">Trace</button></div>
+      <div id="anTraceOut" class="small"></div></div>
+  </div>
+</section>
+
+<!-- AGENT -->
+<section id="agent">
+  <div class="grid g2">
+    <div class="card"><h2>Ask the AI advisor (Groq) about the live grid</h2>
+      <textarea id="q" style="min-height:90px">Lightning has tripped the primary circuit of TX_882. What should we do?</textarea>
+      <div class="row"><label class="small"><input type="checkbox" id="exec"> execute if the graph guard approves (operator only)</label><button class="b p" id="ask">Ask</button></div>
+      <p class="small muted">The model only proposes. evaluate_plan re-checks every plan against the same guards the actuators use; execution re-checks again against current state.</p>
+      <div id="agentOut" class="small"></div>
+    </div>
+    <div class="card"><h2>Tool calls & evidence</h2><div id="agentCalls" class="steps small muted">—</div></div>
+  </div>
+</section>
+
+<!-- MEMORY -->
+<section id="memory">
+  <div class="grid g2">
+    <div class="card"><h2>Incidents (episodic memory)</h2><button class="b" id="memLoad">↻ Load</button><div id="memInc" class="small"></div></div>
+    <div class="card"><h2>Playbooks (procedural memory)</h2><div id="memPb" class="small"></div>
+      <h3>Recall near a span / node</h3><div class="row"><input id="recallId" value="TX_883"><input type="number" id="recallHops" value="2" min="0" max="6"><button class="b p" id="recall">Recall</button></div><div id="recallOut" class="small"></div></div>
+  </div>
+</section>
+
+<!-- BENCH -->
+<section id="bench">
+  <div class="card"><h2>FalkorDB vs SQLite multi-hop trace (results verified equal first)</h2>
+    <div class="row"><select id="bSize"><option>1000</option><option>10000</option><option>100000</option></select>
+      <label>hops <input type="number" id="bHops" value="6" min="2" max="16"></label><label>runs <input type="number" id="bRuns" value="20" min="1" max="200"></label>
+      <button class="b p" id="bRun">Run benchmark</button><span class="small muted">100k first run loads the graph (~3 s)</span></div>
+    <div id="bOut" class="small"></div></div>
+</section>
+
+<!-- AUDIT -->
+<section id="audit">
+  <div class="card"><h2>Hash-chained audit log</h2>
+    <div class="row"><button class="b" id="auLoad">↻ Load latest</button><button class="b p" id="auVerify">Verify chain</button><span id="auVerifyOut" class="small"></span></div>
+    <div id="auOut" class="small"></div></div>
+</section>
+</main>
+<div id="toast"></div>
+<script src="assets/lab.js"></script>
+</body>
+</html>
