@@ -8,7 +8,7 @@ On Windows, run `start-preview.cmd` and open `http://127.0.0.1:8766/login.html`;
 
 Choose a demo role when the backend is unavailable. The operator can run/reset scenarios and auto-cycle. The engineer can inspect graph traces and neighbors. The auditor has read-only access. Live credentials require the authentication service; rejected logins never silently become demo sessions.
 
-Open the hamburger menu to switch between Grid overview (`dashboard.html`), Scenario lab (`scenarios.html`), Graph diagnostics (`diagnostics.html`), and Action audit (`audit.html`). Each address opens directly. Menu navigation keeps the active session and current in-page scenario state; reloading starts a fresh local scenario while retaining the browser's demo audit history.
+Open the hamburger menu to switch between Grid overview (`dashboard.html`), Scenario lab (`scenarios.html`), Graph diagnostics (`diagnostics.html`), and Action audit (`audit.html`). Each is a separate HTML document containing only its feature content. The browser session and completed demo state carry across page loads. Navigating during an unfinished local simulation pauses it, preserves the last visible state, and records the interruption; run or reset the scenario to continue. Demo audit history remains saved in this browser.
 
 All demo actions are simulated. Local audits are stored in the browser and can be exported. They are not an immutable compliance record. Backend latency is displayed only when supplied by live telemetry. An unavailable or disconnected live session pauses controls instead of issuing offline actions. Sign out and select a demo role to enter the local model.
 

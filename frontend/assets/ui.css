@@ -34,17 +34,21 @@
 .scenario-btn strong,.node-details strong{font-size:13px}
 .scenario-btn{min-height:112px}
 .nav-list a.active{font-weight:600}
-body[data-view="overview"] .scenario-panel,body[data-view="overview"] .right-stack{display:none}
 body[data-view="overview"] .dashboard-grid{grid-template-columns:minmax(0,1fr)}
-body[data-view="scenarios"] .primary-stack>.panel:first-child,body[data-view="scenarios"] .right-stack{display:none}
 body[data-view="scenarios"] .dashboard-grid{grid-template-columns:minmax(0,1fr)}
 body[data-view="scenarios"] .scenario-panel{margin-top:0}
-body[data-view="diagnostics"] .metrics,body[data-view="diagnostics"] .scenario-panel,body[data-view="diagnostics"] #audit-panel{display:none}
-body[data-view="audit"] .metrics,body[data-view="audit"] .primary-stack,body[data-view="audit"] #query-panel{display:none}
 body[data-view="audit"] .dashboard-grid{grid-template-columns:minmax(0,1fr)}
 body[data-view="audit"] .right-stack{grid-template-columns:minmax(0,1fr)}
 body[data-view="audit"] .audit-list{max-height:none;min-height:260px}
 body[data-view="audit"] .audit-entry{font-size:13px;padding:17px 0}
 body[data-view="diagnostics"] #query-code{font-size:12px;min-height:300px}
+.feature-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}
+.feature-tile{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:12px;min-height:210px;padding:24px;border:1px solid var(--line);border-radius:13px;background:var(--panel);transition:border-color .2s,transform .2s}
+.feature-tile:hover{border-color:var(--cyan);transform:translateY(-2px)}
+.feature-tile .feature-number{font:10px 'JetBrains Mono',monospace;letter-spacing:.08em;color:var(--cyan)}
+.feature-tile strong{font:600 21px 'Space Grotesk',sans-serif;letter-spacing:-.03em}
+.feature-tile>span:not(.feature-number){max-width:330px;color:var(--muted);font-size:13px;line-height:1.6}
+.feature-tile b{position:absolute;right:24px;bottom:20px;color:var(--cyan);font-size:20px}
 @media(max-width:950px){body[data-view="diagnostics"] .dashboard-grid{grid-template-columns:minmax(0,1fr)}body[data-view="diagnostics"] .right-stack{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:600px){.command-title-group{gap:10px}.command-bar h1{font-size:15px}.menu-toggle span:last-child{display:none}.menu-toggle{padding:10px}.command-actions{gap:6px}.command-actions .btn{padding:8px}.sidebar .operator-card,.sidebar .sidebar-bottom .small{display:block}.sidebar .nav-label{display:inline}.page-heading{align-items:flex-start}.page-heading p{font-size:12px}.scenario-btn{min-height:72px}.topology-svg{min-width:900px}}
+@media(max-width:950px){.feature-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.command-title-group{gap:10px}.command-bar h1{font-size:15px}.menu-toggle span:last-child{display:none}.menu-toggle{padding:10px}.command-actions{gap:6px}.command-actions .btn{padding:8px}.sidebar .operator-card,.sidebar .sidebar-bottom .small{display:block}.sidebar .nav-label{display:inline}.page-heading{align-items:flex-start}.page-heading p{font-size:12px}.scenario-btn{min-height:72px}.topology-svg{min-width:900px}.feature-tiles{grid-template-columns:1fr}.feature-tile{min-height:160px}}
