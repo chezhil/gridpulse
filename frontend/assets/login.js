@@ -1,5 +1,5 @@
 (() => {
-  const API = 'http://localhost:8000';
+  const API = location.port==='8000' ? location.origin : 'http://localhost:8000';
   const roles = { operator:'Chief Grid Operator', engineer:'GraphBLAS Topology Engineer', auditor:'Compliance Auditor' };
   const message = document.getElementById('auth-message');
   let busy = false;

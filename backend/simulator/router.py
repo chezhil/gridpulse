@@ -7,7 +7,9 @@ and direct SCADA actuation tools.
 from fastapi import APIRouter, HTTPException, Depends, status
 from typing import Dict, Any
 
-from backend.auth.router import verify_operator_token, OperatorSession
+from backend.graph import GraphError
+from backend.mcp import server
+from backend.auth.router import verify_operator_token, OperatorSession, require_role
 from backend.simulator.grid_sim import (
     grid_simulator,
     BreakerActionRequest,
@@ -30,7 +32,7 @@ def get_grid_state() -> Dict[str, Any]:
 @sim_router.post("/trigger-scenario/{scenario_id}")
 async def trigger_scenario(
     scenario_id: int,
-    session: OperatorSession = Depends(verify_operator_token)
+    session: OperatorSession = Depends(require_role(["operator", "NERC_OPERATOR", "SCADA_ADMIN"]))
 ) -> Dict[str, Any]:
     """
     POST /api/sim/trigger-scenario/{scenario_id}
@@ -51,6 +53,10 @@ async def trigger_scenario(
             scenario_id=scenario_id,
             operator_id=session.operator_id
         )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except GraphError:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -60,7 +66,7 @@ async def trigger_scenario(
 
 @sim_router.post("/reset")
 async def reset_grid(
-    session: OperatorSession = Depends(verify_operator_token)
+    session: OperatorSession = Depends(require_role(["operator", "NERC_OPERATOR", "SCADA_ADMIN"]))
 ) -> Dict[str, Any]:
     """
     POST /api/sim/reset
@@ -70,6 +76,10 @@ async def reset_grid(
     """
     try:
         return await grid_simulator.reset(operator_id=session.operator_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except GraphError:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -78,9 +88,9 @@ async def reset_grid(
 
 
 @sim_router.post("/actuate/trip-breaker")
-def trip_breaker(
+async def trip_breaker(
     req: BreakerActionRequest,
-    session: OperatorSession = Depends(verify_operator_token)
+    session: OperatorSession = Depends(require_role(["operator", "NERC_OPERATOR", "SCADA_ADMIN"]))
 ) -> Dict[str, Any]:
     """
     POST /api/sim/actuate/trip-breaker
@@ -88,12 +98,8 @@ def trip_breaker(
     Guarantees Tier-1 hospital invariant protection.
     """
     try:
-        return grid_simulator.apply_breaker_trip(
-            breaker_id=req.breaker_id,
-            reason=req.reason,
-            cypher_audit_hash=req.cypher_audit_hash,
-            operator_id=session.operator_id
-        )
+        async with grid_simulator._lock:
+            return server.scada_trip_breaker(req.breaker_id, req.reason, req.cypher_audit_hash)
     except PermissionError as pe:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -107,21 +113,17 @@ def trip_breaker(
 
 
 @sim_router.post("/actuate/dispatch-bess")
-def dispatch_bess(
+async def dispatch_bess(
     req: BessDispatchRequest,
-    session: OperatorSession = Depends(verify_operator_token)
+    session: OperatorSession = Depends(require_role(["operator", "NERC_OPERATOR", "SCADA_ADMIN"]))
 ) -> Dict[str, Any]:
     """
     POST /api/sim/actuate/dispatch-bess
     Commands local utility BESS battery inverters to inject power.
     """
     try:
-        return grid_simulator.apply_bess_dispatch(
-            bess_id=req.bess_id,
-            inject_mw=req.inject_mw,
-            target_circuit=req.target_circuit,
-            operator_id=session.operator_id
-        )
+        async with grid_simulator._lock:
+            return server.scada_dispatch_bess(req.bess_id, req.inject_mw, req.target_circuit)
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

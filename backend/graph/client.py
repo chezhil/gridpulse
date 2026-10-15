@@ -16,8 +16,14 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-import redis
-from falkordb import FalkorDB
+try:
+    import redis
+except ImportError:
+    redis = None
+try:
+    from falkordb import FalkorDB
+except ImportError:
+    FalkorDB = None
 
 log = logging.getLogger("gridpulse.graph")
 
@@ -117,7 +123,8 @@ class QueryOutcome:
         }
 
 
-_CONNECTION_ERRORS = (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError, OSError)
+_CONNECTION_ERRORS = ((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError, OSError)
+                      if redis is not None else (OSError,))
 _STAT_FIELDS = (
     "nodes_created",
     "nodes_deleted",
@@ -143,6 +150,9 @@ class GraphClient:
 
     def connect(self, attempts: Optional[int] = None) -> None:
         """Connect and PING, retrying with linear backoff a bounded number of times."""
+        if FalkorDB is None:
+            raise GraphUnavailableError("FalkorDB SDK missing; install backend/requirements.txt",
+                                        host=self.settings.host, port=self.settings.port)
         attempts = attempts or self.settings.connect_attempts
         last_exc: Optional[BaseException] = None
         for attempt in range(1, attempts + 1):

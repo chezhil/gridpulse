@@ -8,3 +8,6 @@ build/
 __pycache__/
 *.pyc
 .venv/
+
+data/
+.pytest_cache/

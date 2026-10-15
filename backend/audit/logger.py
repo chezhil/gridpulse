@@ -31,7 +31,7 @@ class AuditEventModel(BaseModel):
     evidence: Optional[Dict[str, Any]] = None
     evidence_hash: str
     requested_action: Optional[Dict[str, Any]] = None
-    outcome: str  # SUCCESS | FAILED | REJECTED
+    outcome: str  # REQUESTED | SUCCESS | FAILED | REJECTED
     operator_id: str
 
 

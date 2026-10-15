@@ -39,7 +39,7 @@ class ScenarioInfo(BaseModel):
 
 
 class MetricsInfo(BaseModel):
-    graphblas_latency_ms: float = Field(default=1.4, description="FalkorDB GraphBLAS matrix compute latency")
+    graphblas_latency_ms: Optional[float] = Field(default=None, description="FalkorDB GraphBLAS matrix compute latency")
     city_load_mw: float = Field(default=840.0, description="Current metropolitan power demand in MW")
     city_load_pct: float = Field(default=100.0, description="Substation capacity percentage")
     bess_injection_mw: float = Field(default=0.0, description="Real-time BESS inverter active injection in MW")
@@ -68,7 +68,7 @@ class TelemetryPayload(BaseModel):
 
 class BlastRadiusRequest(BaseModel):
     origin_node_id: str = "T3"
-    max_hops: int = 6
+    max_hops: int = Field(6, ge=1, le=12)
 
 
 class DownstreamOverload(BaseModel):
@@ -138,7 +138,7 @@ class TripBreakerResult(BaseModel):
 
 class DispatchBessRequest(BaseModel):
     bess_id: str
-    inject_mw: float
+    inject_mw: float = Field(gt=0, le=60, allow_inf_nan=False)
     target_circuit: Literal["UPPER_PRIMARY", "LOWER_BACKUP"] = "LOWER_BACKUP"
 
 

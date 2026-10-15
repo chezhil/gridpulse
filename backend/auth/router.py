@@ -19,7 +19,8 @@ SESSIONS: Dict[str, "OperatorSession"] = {}
 class LoginRequest(BaseModel):
     username: Optional[str] = Field(None, description="Operator handle or ID")
     password: Optional[str] = Field(None, description="Operator credentials or PIN")
-    role: Optional[str] = Field("NERC_OPERATOR", description="Requested role (NERC_OPERATOR, SCADA_ADMIN, VIEWER)")
+    role: Optional[str] = Field("operator", description="Demo role: operator, engineer, or auditor")
+    demo: bool = False
     is_demo_bypass: Optional[bool] = Field(False, description="Flag for instant hackathon judge bypass")
 
 
@@ -60,7 +61,7 @@ def login(req: LoginRequest):
     Clearly marked as hackathon demonstration access; not production NERC CIP certified.
     """
     # Demo Bypass condition: explicitly requested, or demo credentials, or empty fields
-    is_demo = req.is_demo_bypass or (
+    is_demo = req.demo or req.is_demo_bypass or (
         req.username in (None, "", "demo", "operator", "OP_NERC_772") and
         req.password in (None, "", "demo", "password")
     )
@@ -72,9 +73,11 @@ def login(req: LoginRequest):
             detail="Invalid operator credentials. Use Demo Bypass or password 'gridpulse2026'."
         )
 
-    role = (req.role or "NERC_OPERATOR").upper()
-    if role not in ("NERC_OPERATOR", "SCADA_ADMIN", "VIEWER"):
-        role = "NERC_OPERATOR"
+    aliases = {"NERC_OPERATOR": "operator", "SCADA_ADMIN": "operator", "VIEWER": "auditor"}
+    requested = req.role or "operator"
+    role = aliases.get(requested.upper(), requested.lower())
+    if role not in ("operator", "engineer", "auditor"):
+        raise HTTPException(status_code=422, detail="Unknown demo role")
 
     operator_id = req.username if (req.username and req.username.strip()) else "OP_NERC_772"
     token = f"gp-{secrets.token_hex(16)}"

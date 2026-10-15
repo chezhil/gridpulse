@@ -1,39 +1,30 @@
 services:
   falkordb:
     image: falkordb/falkordb:latest
-    container_name: gridpulse-falkordb
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - falkordb_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
     restart: unless-stopped
-
   backend:
-    image: python:3.11-slim
-    container_name: gridpulse-backend
-    working_dir: /app
-    command: >
-      sh -c "pip install --no-cache-dir fastapi 'uvicorn[standard]' pydantic websockets falkordb &&
-             uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
+    build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      - FALKORDB_HOST=falkordb
-      - FALKORDB_PORT=6379
-      - PORT=8000
-      - PYTHONUNBUFFERED=1
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: "6379"
+      PYTHONUNBUFFERED: "1"
+      GRIDPULSE_AUDIT_DB: /app/data/audit_log.db
     volumes:
-      - ./backend:/app/backend
       - ./data:/app/data
     depends_on:
       falkordb:
         condition: service_healthy
     restart: unless-stopped
-
 volumes:
   falkordb_data:
