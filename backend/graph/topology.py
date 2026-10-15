@@ -185,7 +185,8 @@ def span_rows() -> List[Dict[str, Any]]:
 
 
 def feeds_rows() -> List[Dict[str, Any]]:
-    return [{"from": "HYDRO_ALPINE_01", "to": "T1", "props": {"mw": 840.0, "kv": 500}}]
+    # impedance_pu makes the plant tie near-ideal in weighted path algorithms too.
+    return [{"from": "HYDRO_ALPINE_01", "to": "T1", "props": {"mw": 840.0, "kv": 500, "impedance_pu": 0.0001}}]
 
 
 def connected_rows() -> List[Dict[str, Any]]:

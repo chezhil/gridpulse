@@ -26,6 +26,7 @@ from .client import (
     UnknownEntityError,
     get_client,
 )
+from .contingency import scan_n1
 from .thermal import project_loading
 
 DEFAULT_MAX_HOPS = 6
@@ -323,12 +324,13 @@ def trace_cascade(
     assume_tripped: Optional[Iterable[Any]] = None,
     threshold_pct: float = DEFAULT_THRESHOLD_PCT,
     client: Optional[GraphClient] = None,
+    overrides: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Blast-radius trace for ``POST /api/graph/trace-cascade``.
 
     Combines (a) Cypher reachability downstream of ``origin_id`` with (b) the
-    ``radial-dc/1`` loading projection over the current graph state plus any
-    ``assume_tripped`` circuits. Connectivity and overload are reported
+    ``dc-pf/1`` loading projection over the current graph state plus any
+    ``assume_tripped`` circuits and what-if ``overrides``. Connectivity and overload are reported
     separately; a node being downstream is not by itself an overload claim.
     """
     client = client or get_client()
@@ -340,7 +342,7 @@ def trace_cascade(
     origin, origin_q = resolve_origin(origin_id, client)
     reach, reach_q = trace_reachability(origin["start_node_id"], max_hops, client)
     snapshot, snap_q = read_grid_snapshot(client)
-    projection = project_loading(snapshot, trips, threshold_pct)
+    projection = project_loading(snapshot, trips, threshold_pct, overrides)
 
     start = origin["start_node_id"]
     nodes = [{"id": start, "label": origin["start_label"], "hops": 0, "path": [start], "status": None}]
@@ -578,4 +580,147 @@ def verify_tier1_protection(substation_id: Optional[str] = None, client: Optiona
         "assets": assets,
         "evidence": [o.evidence() for o in outcomes],
         "timing": _timing(outcomes, started),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# N-1 contingency scan                                                        #
+# --------------------------------------------------------------------------- #
+
+N1_WRITE_CYPHER = """\
+UNWIND $rows AS row
+MATCH ()-[r:SPAN|TERMINATES_AT]->() WHERE r.id = row.span_id AND r.circuit = row.circuit
+SET r.n1_outcome = row.outcome, r.n1_worst_element = row.worst_element,
+    r.n1_worst_loading_pct = row.worst_loading_pct, r.n1_state_version = $state_version
+RETURN count(r) AS updated"""
+
+
+def run_contingency_scan(
+    threshold_pct: float = DEFAULT_THRESHOLD_PCT, write_back: bool = True, client: Optional[GraphClient] = None
+) -> Dict[str, Any]:
+    """Lose each energised circuit in turn, re-solve, and (optionally) tag circuits with the result.
+
+    Tags are ``n1_outcome``, ``n1_worst_element``, ``n1_worst_loading_pct`` and
+    ``n1_state_version`` on each circuit relationship; compare the version with
+    the current ``state_version`` to know whether they are stale.
+    """
+    client = client or get_client()
+    started = time.perf_counter()
+    threshold_pct = _validate_number(threshold_pct, "threshold_pct", 1.0, 150.0)
+    snapshot, snap_q = read_grid_snapshot(client)
+    model_started = time.perf_counter()
+    scan = scan_n1(snapshot, threshold_pct)
+    model_ms = (time.perf_counter() - model_started) * 1000.0
+    outcomes = [snap_q]
+    if write_back:
+        rows = [
+            {k: c[k] for k in ("span_id", "circuit", "outcome", "worst_element", "worst_loading_pct")}
+            for c in scan["contingencies"]
+        ]
+        outcomes.append(
+            client.query(
+                "n1_write_back", N1_WRITE_CYPHER, {"rows": rows, "state_version": snapshot["state_version"]}, read_only=False
+            )
+        )
+    timing = _timing(outcomes, started)
+    timing["model_ms"] = round(model_ms, 4)
+    return {
+        **scan,
+        "state_version": snapshot["state_version"],
+        "written_back": write_back,
+        "evidence": [o.evidence() for o in outcomes],
+        "timing": timing,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Plan evaluation (what-if, no actuation)                                     #
+# --------------------------------------------------------------------------- #
+
+
+def evaluate_plan(
+    plan: Dict[str, Any],
+    threshold_pct: float = DEFAULT_THRESHOLD_PCT,
+    min_soc_pct: float = DEFAULT_MIN_SOC_PCT,
+    client: Optional[GraphClient] = None,
+) -> Dict[str, Any]:
+    """Check a proposed mitigation against the same guards actuation uses, without actuating.
+
+    ``plan`` = ``{"trip_breakers": ["BRK_IND_12"], "bess_dispatch": {"BESS_METRO_01": 45.0}}``.
+    The verdict is ``APPROVED`` only if every breaker passes :func:`check_breaker`,
+    every dispatch is within SOC and discharge limits, no Tier-1 consumer
+    loses supply, and the projected state is within limits.
+    """
+    client = client or get_client()
+    started = time.perf_counter()
+    if not isinstance(plan, dict):
+        raise InvalidRequestError("plan must be an object")
+    unknown = sorted(set(plan) - {"trip_breakers", "bess_dispatch"})
+    if unknown:
+        raise InvalidRequestError("plan has unknown keys", unknown=unknown)
+    breakers = plan.get("trip_breakers") or []
+    dispatch = plan.get("bess_dispatch") or {}
+    if not isinstance(breakers, list) or not isinstance(dispatch, dict):
+        raise InvalidRequestError("trip_breakers must be a list and bess_dispatch an object")
+    threshold_pct = _validate_number(threshold_pct, "threshold_pct", 1.0, 150.0)
+    min_soc_pct = _validate_number(min_soc_pct, "min_soc_pct", 0.0, 100.0)
+
+    reasons: List[str] = []
+    evidence: List[Dict[str, Any]] = []
+    deenergize: List[str] = []
+    breaker_checks = []
+    for b in breakers:
+        validate_id(b, "trip_breakers[]")
+        check = check_breaker(b, client)
+        evidence += check["evidence"]
+        breaker_checks.append({k: check[k] for k in ("breaker_id", "trip_allowed", "reasons", "shed_mw")})
+        if not check["trip_allowed"]:
+            reasons.append(f"{b}: {','.join(check['reasons'])}")
+        deenergize += [c["id"] for c in check["served_consumers"]]
+
+    snapshot, snap_q = read_grid_snapshot(client)
+    evidence.append(snap_q.evidence())
+    bess_by_id = {b["id"]: b for b in snapshot["bess"]}
+    injections: Dict[str, float] = {}
+    for bid, mw in dispatch.items():
+        validate_id(bid, "bess_dispatch key")
+        b = bess_by_id.get(bid)
+        if b is None:
+            reasons.append(f"{bid}: UNKNOWN_BESS")
+            continue
+        mw = _validate_number(mw, f"bess_dispatch.{bid}", 0.0, 10_000.0)
+        if b.get("soc_pct") is None or b["soc_pct"] <= min_soc_pct:
+            reasons.append(f"{bid}: SOC_AT_OR_BELOW_MINIMUM")
+        if b.get("status") not in ("STANDBY", "DISCHARGING"):
+            reasons.append(f"{bid}: STATUS_{b.get('status')}")
+        if b.get("max_discharge_mw") is None or mw > b["max_discharge_mw"]:
+            reasons.append(f"{bid}: EXCEEDS_MAX_DISCHARGE")
+            continue
+        injections[bid] = mw
+
+    overrides = {"bess_injection_mw": injections, "deenergized_consumers": sorted(set(deenergize))}
+    projection = project_loading(snapshot, threshold_pct=threshold_pct, overrides=overrides)
+    sub_status = {s["id"]: s["projected_status"] for s in projection["substations"]}
+    tier1 = [c for c in snapshot["consumers"] if c.get("priority_tier") == 1]
+    tier1_out = []
+    for c in tier1:
+        supplied = sub_status.get(c["substation_id"]) not in (None, "ISLANDED") and c["id"] not in deenergize and c["energized"]
+        tier1_out.append({"id": c["id"], "supplied": supplied, "substation_status": sub_status.get(c["substation_id"])})
+        if not supplied:
+            reasons.append(f"{c['id']}: TIER1_LOSES_SUPPLY")
+    if projection["outcome"] != "WITHIN_LIMITS":
+        reasons.append(f"PROJECTION_{projection['outcome']}")
+
+    shed = sum(c["shed_mw"] for c in breaker_checks if c["trip_allowed"])
+    return {
+        "verdict": "REJECTED" if reasons else "APPROVED",
+        "reasons": reasons,
+        "plan": {"trip_breakers": breakers, "bess_dispatch": dispatch},
+        "state_version": snapshot["state_version"],
+        "breaker_checks": breaker_checks,
+        "relief_mw": round(shed + sum(injections.values()), 3),
+        "tier1": tier1_out,
+        "projection": projection,
+        "evidence": evidence,
+        "timing": {"engine_total_ms": round((time.perf_counter() - started) * 1000.0, 4)},
     }

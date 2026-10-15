@@ -10,6 +10,10 @@ Integration surface (see README.md in this directory):
 * ``find_mitigation_assets(...)`` BESS and Tier-3 load discovery
 * ``check_breaker(breaker_id)``   breaker trip eligibility (Tier-1 guard)
 * ``verify_tier1_protection()``   Tier-1 energisation / risk audit
+* ``evaluate_plan(plan)``         what-if check of a mitigation plan (no actuation)
+* ``run_contingency_scan()``      N-1 security scan, tags circuits in the graph
+* ``criticality_ranking()``       betweenness centrality of grid buses
+* ``reroute_paths()``             k lowest-impedance energised paths
 """
 
 from __future__ import annotations
@@ -30,8 +34,11 @@ from .client import (
     set_client,
 )
 from .evidence import evidence_hash, verify_evidence
+from .algorithms import criticality_ranking, reroute_paths
 from .queries import (
     check_breaker,
+    evaluate_plan,
+    run_contingency_scan,
     find_mitigation_assets,
     get_topology,
     read_grid_snapshot,
@@ -67,6 +74,10 @@ __all__ = [
     "UnknownEntityError",
     "apply_state_update",
     "check_breaker",
+    "criticality_ranking",
+    "evaluate_plan",
+    "reroute_paths",
+    "run_contingency_scan",
     "ensure_seeded",
     "evidence_hash",
     "find_mitigation_assets",

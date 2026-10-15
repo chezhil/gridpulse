@@ -45,7 +45,7 @@ Stop the Compose backend first (`docker compose stop backend`) before starting a
 
 - `backend/graph/topology.py` is the nominal source of IDs and values. `TX_882` connects T3→T4; `TX_884` connects T5→T6; `TX_888` connects T9→SUB_METRO. Consumers connect through `DISTRIBUTES_TO`.
 - One simulator owns state. Its updates reach FalkorDB before graph decisions. The deterministic interceptor calls the shared Python guard functions; the external MCP bridge forwards to HTTP adapters in that same running backend.
-- The documented `radial-dc/1` projection models parallel circuits and load relief. Nominal demand is 840 MW. Heatwave multiplies every consumer by exactly 1.2: **1008 MW / 120% before mitigation**. Industrial demand is 62 MW nominal / 74.4 MW during heatwave. After shedding and 45 MW BESS support, energized demand is 778 MW for lightning/wildfire or 933.6 MW for heatwave; net substation load is 733 MW or 888.6 MW respectively.
+- The documented `dc-pf/1` linear power-flow projection models parallel circuits, meshed corridors and PTDF-based load relief (see `backend/graph/README.md`). Nominal demand is 840 MW. Heatwave multiplies every consumer by exactly 1.2: **1008 MW / 120% before mitigation**. Industrial demand is 62 MW nominal / 74.4 MW during heatwave. After shedding and 45 MW BESS support, energized demand is 778 MW for lightning/wildfire or 933.6 MW for heatwave; net substation load is 733 MW or 888.6 MW respectively.
 - Cypher evidence contains actual query text, parameters, returned rows, hashes and measured timings. Dashboard latency is the sum of server times for the pre-action trace queries, not physical actuation latency or a fixed 1.4 ms benchmark.
 - Every actuation requires current graph guards and durable audit intent before simulator mutation. Only isolated Tier-3 breakers are eligible; a supplied audit hash cannot authorize a hospital trip. BESS requires SOC above 40%, a finite positive amount within discharge/connection limits, and `LOWER_BACKUP`. Dispatch is an **absolute MW setpoint**, so repeating 45 MW does not add another 45 MW.
 - Successful actions refresh projected circuit flows. A failure after actuation records the applied result, intent ID and uncertain confirmation, marks the runtime failed, and requires reset. Audit failure before intent prevents actuation.
@@ -53,6 +53,25 @@ Stop the Compose backend first (`docker compose stop backend`) before starting a
 - Mutating control routes require an operator login. All four SCADA tool adapters require a login; read-only roles can query tools but cannot actuate. WebSocket telemetry requires a current login token. No static bypass token is seeded.
 - A disconnected WebSocket retries and refreshes authoritative topology/state. Failed initial topology loads also retry. The topology shows the actual faulted span, backup reroute, BESS connection and shed consumer feeder. On narrow screens the diagram scrolls within its panel.
 - With an unavailable database, the site/login remain available, `/health` reports `DEGRADED`, and live graph actions fail explicitly. **Offline simulation** is a labelled browser-only model: no database timings and no queued backend actions. Sign out and log in again to return to live mode.
+
+## Grid analysis, AI advisor and audit integrity
+
+- **N-1 security**: `POST /api/graph/contingency` trips each circuit in turn, re-solves, and tags circuits in FalkorDB. The demo grid is not N-1 secure: every primary outage overloads its backup.
+- **Graph algorithms**: `GET /api/graph/criticality` (betweenness centrality) and `GET /api/graph/reroute` (k lowest-impedance energised paths via `algo.SPpaths`).
+- **What-if plans**: `POST /api/graph/evaluate-plan` checks `{trip_breakers, bess_dispatch}` against the actuation guards without actuating.
+- **Graph vs SQL benchmark**: `POST /api/graph/benchmark` and `python -m backend.graph.benchmark --sizes 1000 10000 100000 --hops 6 10`. The measured results, including where SQL is as fast or faster, are in `backend/graph/README.md`.
+- **Claude advisor**: `POST /api/mcp/agent/advise` (any logged-in role; `{"execute": true}` requires the operator role).
+  - Claude (`claude-opus-5-5`, override with `GRIDPULSE_AGENT_MODEL`) investigates with read-only graph tools and must submit a plan.
+  - `evaluate_plan` then validates the plan deterministically, and the proposal is audited as `AGENT_PROPOSAL`.
+  - Execution re-checks against current state and goes through the guarded SCADA tools; the model's output alone never authorizes anything.
+  - Server-side refusal fallback is enabled.
+  - Requires `ANTHROPIC_API_KEY`; without it the endpoint returns 503 `AGENT_UNAVAILABLE`.
+- **Audit chain**: each audit record stores `seq`, `prev_hash`, `record_hash` and the graph `state_version` the action was based on. `GET /api/audit/verify` recomputes the chain and reports the first broken link. Older databases are migrated in place, and their pre-chain rows are reported as `legacy_unchained`.
+- **Event loop**: graph and SQLite work in scenario, reset and tool paths runs in worker threads while the simulator lock is held, so WebSocket telemetry keeps flowing during a run.
+- **Tests and CI**: `.github/workflows/ci.yml` runs the full suite against a FalkorDB service container on every push and pull request. Coverage includes:
+  - randomised safety properties over 16 seeded fault/demand/SOC combinations (`backend/mcp/test_random_safety.py`)
+  - audit tamper detection
+  - the agent loop, driven by a scripted model client so no API calls are made.
 
 ## MCP transport
 
@@ -78,7 +97,7 @@ FALKORDB_PORT=6380 GRIDPULSE_REQUIRE_FALKORDB=1 .venv/bin/python -m pytest -q
 FALKORDB_PORT=6380 GRIDPULSE_REQUIRE_FALKORDB=1 .venv/bin/python -m pytest backend/graph/tests -q
 ```
 
-**69 passed, zero skipped** overall. The required graph suite: **42 passed, zero skipped**. Both report one upstream Starlette/httpx TestClient deprecation warning. The graph suite includes pure model tests as well as real Cypher tests. `backend/mcp/test_live_runtime.py` adds seven real-database app/runtime tests with isolated graph names and audit files; it does not substitute graph answers. Other app/SCADA fixture tests remain explicitly labelled as fixtures.
+**105 passed, zero skipped** overall (re-verified in a fresh venv built only from the requirements files). The required graph suite: **55 passed, zero skipped**. Both report one upstream Starlette/httpx TestClient deprecation warning. The graph suite includes pure model tests as well as real Cypher tests. `backend/mcp/test_live_runtime.py` adds seven real-database app/runtime tests with isolated graph names and audit files; it does not substitute graph answers. Other app/SCADA fixture tests remain explicitly labelled as fixtures.
 
 Live database coverage includes repeated seeding, graph traversal, all three complete scenario pipelines, evidence hashes, Tier-1 protection, operator/read-only HTTP and WebSocket behavior, duplicate/conflicting triggers, reset cancellation, insufficient battery capacity, rejected hospital trips, repeatable battery setpoints and projected state synchronization. Partial confirmation and audit-write failures have additional fault-injection regression tests.
 
@@ -103,4 +122,4 @@ Python compilation, JavaScript syntax and `git diff --check` passed. The landing
 
 ## Remaining limitations
 
-This is a deterministic educational radial model, not validated AC power flow, thermal protection timing, physical SCADA, production authentication or NERC certification. The preserved landing narrative includes illustrative benchmark/timing claims; these are not results from this verification. Fonts and the landing Tailwind enhancement use external CDNs; existing fallback styles remain in place. SQLite is append-only through application APIs, not tamper-proof, and SQLite/graph/simulator updates are not a distributed transaction. Process restart restores nominal state rather than resuming a run; unresolved crash-time intents require inspection. Demo tokens have no production expiry/revocation service. MCP is a stdio bridge and requires the app plus a valid session. No environment blocker remains for the verified Compose/Chromium workflow.
+This is a deterministic educational DC power-flow model, not validated AC power flow, thermal protection timing, physical SCADA, production authentication or NERC certification. The preserved landing narrative includes illustrative benchmark/timing claims; these are not results from this verification. Fonts and the landing Tailwind enhancement use external CDNs; existing fallback styles remain in place. SQLite audits are hash-chained and verifiable (`GET /api/audit/verify`), which makes edits and deletions detectable but is not tamper-proof against someone who can rewrite the whole chain; and SQLite/graph/simulator updates are not a distributed transaction. Process restart restores nominal state rather than resuming a run; unresolved crash-time intents require inspection. Demo tokens have no production expiry/revocation service. MCP is a stdio bridge and requires the app plus a valid session. No environment blocker remains for the verified Compose/Chromium workflow.

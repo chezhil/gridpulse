@@ -60,6 +60,7 @@ def runtime(monkeypatch, tmp_path):
         state['version'] += 1
         return {'state_version':state['version']}
 
+    monkeypatch.setattr(graph, 'read_state_version', lambda client=None: state['version'])
     monkeypatch.setattr(graph, 'init_graph', lambda **kw: {})
     monkeypatch.setattr(graph, 'reset_grid', lambda: {})
     monkeypatch.setattr(graph, 'apply_state_update', update)

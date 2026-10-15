@@ -202,6 +202,16 @@ def seed_grid(client: Optional[GraphClient] = None, *, reset: bool = True, prune
     evidence += _merge_edges(client, reset)
     if prune:
         evidence += _prune_edges(client)
+    if reset:
+        evidence.append(
+            client.query(
+                "clear_n1_tags",
+                "MATCH ()-[r:SPAN|TERMINATES_AT]->() WHERE r.n1_outcome IS NOT NULL "
+                "SET r.n1_outcome = NULL, r.n1_worst_element = NULL, r.n1_worst_loading_pct = NULL, "
+                "r.n1_state_version = NULL RETURN count(r) AS cleared",
+                read_only=False,
+            ).evidence()
+        )
     state_version = _bump_meta(client, reset)
     counts = count_topology(client)
     expected = {"nodes": topo.EXPECTED_NODE_COUNT, "edges": topo.EXPECTED_EDGE_COUNT}
