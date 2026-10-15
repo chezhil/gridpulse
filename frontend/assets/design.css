@@ -1,0 +1,152 @@
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #040814;
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none;
+        }
+        #scroll-runway {
+            display: none;
+        }
+        #realistic-world-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 2;
+            display: block;
+            cursor: grab;
+        }
+        #realistic-world-canvas:active {
+            cursor: grabbing;
+        }
+        .transparent-header {
+            background: transparent;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            border-bottom: none;
+            transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        html:not(.dark) .transparent-header {
+            background: rgba(255, 255, 255, 0.52);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.65);
+            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
+        }
+        .day-boxed-content {
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 1.75rem;
+            transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, padding 0.3s ease;
+        }
+        html:not(.dark) .day-boxed-content {
+            background: rgba(255, 255, 255, 0.54);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.72);
+            border-radius: 1.75rem;
+            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+            padding: 2.25rem 2.5rem;
+        }
+        html:not(.dark) .day-boxed-content:empty {
+            display: none !important;
+        }
+        .glass-card {
+            background: rgba(10, 17, 34, 0.88);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+        html:not(.dark) .glass-card {
+            background: rgba(255, 255, 255, 0.90);
+            border: 1px solid rgba(15, 23, 42, 0.15);
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.15);
+        }
+        .station-btn.active {
+            color: #38bdf8;
+            font-weight: 600;
+        }
+        html:not(.dark) .station-btn.active {
+            color: #0284c7;
+        }
+        .dynamic-sky-text {
+            color: #f8fafc;
+            text-shadow:
+                0 2px 6px rgba(2, 6, 23, 0.98),
+                0 8px 28px rgba(2, 6, 23, 0.92),
+                0 0 52px rgba(2, 6, 23, 0.85);
+        }
+        html:not(.dark) .dynamic-sky-text {
+            color: #0f172a;
+            text-shadow: 0 1px 2px rgba(255, 255, 255, 0.85);
+        }
+        html:not(.dark) .day-accent-sky { color: #0284c7 !important; }
+        html:not(.dark) .day-accent-emerald { color: #059669 !important; }
+        html:not(.dark) .day-accent-amber { color: #d97706 !important; }
+        html:not(.dark) .day-accent-purple { color: #7c3aed !important; }
+        .kinetic-stat {
+            font-family: 'Space Grotesk', sans-serif;
+            letter-spacing: -0.04em;
+            line-height: 0.92;
+        }
+        .app-view {
+            transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), filter 0.55s ease;
+        }
+        .app-view.view-hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.985) translateY(10px);
+            filter: blur(8px);
+        }
+        .app-view.view-active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1) translateY(0);
+            filter: blur(0px);
+        }
+        .gateway-grid-bg {
+            background-color: #030712;
+            background-image:
+                linear-gradient(to right, rgba(56, 189, 248, 0.06) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(56, 189, 248, 0.06) 1px, transparent 1px);
+            background-size: 56px 56px;
+        }
+        html:not(.dark) .gateway-grid-bg {
+            background-color: #f1f5f9;
+            background-image:
+                linear-gradient(to right, rgba(2, 132, 199, 0.08) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(2, 132, 199, 0.08) 1px, transparent 1px);
+        }
+        .scada-surface {
+            background: rgba(8, 15, 30, 0.92);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+        }
+        html:not(.dark) .scada-surface {
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid rgba(15, 23, 42, 0.12);
+            box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+        }
+        .scada-input {
+            background: rgba(15, 23, 42, 0.75);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            color: #f8fafc;
+        }
+        html:not(.dark) .scada-input {
+            background: #f8fafc;
+            border: 1px solid rgba(15, 23, 42, 0.18);
+            color: #0f172a;
+        }
+
+.integration-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end}.integration-controls label{display:flex;flex-direction:column;gap:6px;font-size:12px}.integration-controls input{background:transparent;border:1px solid #64748b;border-radius:8px;padding:8px;color:inherit;max-width:100%}.integration-controls button{background:#0369a1;color:white;padding:9px 14px;border-radius:10px}.integration-result{white-space:pre-wrap;overflow-wrap:anywhere;max-height:350px;overflow:auto;font-size:12px}button:disabled{opacity:.4;cursor:not-allowed}#console-mcp-log{white-space:pre-wrap}#view-console{overflow-x:hidden}#connection-status{overflow-wrap:anywhere} @media(max-width:640px){#view-console header{gap:4px;padding:8px;height:auto;flex-wrap:wrap}.kinetic-stat{font-size:22px}.integration-controls label{width:100%}}
