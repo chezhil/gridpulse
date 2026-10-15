@@ -1,0 +1,2996 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <script src="assets/theme.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GridPulse — Autonomous Cascading Blackout Interceptor | FalkorDB</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Space Grotesk, Inter, and JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+
+    <script>
+        if (window.tailwind) { tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        display: ['Space Grotesk', 'sans-serif'],
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }; document.documentElement.classList.add('tailwind-ready'); }
+    </script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            min-height: 100%;
+            overflow-x: hidden;
+            background-color: #040814;
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none;
+        }
+        /* Virtual scroll runway that powers smooth vertical-to-horizontal camera panning */
+        #scroll-runway {
+            height: 600vh;
+            width: 100%;
+            position: relative;
+            z-index: 1;
+        }
+        #realistic-world-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 2;
+            display: block;
+            cursor: grab;
+        }
+        #realistic-world-canvas:active {
+            cursor: grabbing;
+        }
+        /* Top navigation bar: completely transparent in Night Mode, subtle frosted glass in Day Mode */
+        .transparent-header {
+            background: transparent;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            border-bottom: none;
+            transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        html:not(.dark) .transparent-header {
+            background: rgba(255, 255, 255, 0.52);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.65);
+            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
+        }
+        /* Day-Only Adaptive Rounded Glass Box for Sky Typography */
+        .day-boxed-content {
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 1.5rem;
+            transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, padding 0.3s ease;
+        }
+        html:not(.dark) .day-boxed-content {
+            background: rgba(255, 255, 255, 0.54);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.72);
+            border-radius: 1.5rem;
+            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+            padding: 1.25rem 1.5rem;
+        }
+        /* Persistent Glass Card for Telemetry Drawer & Modals */
+        .glass-card {
+            background: rgba(10, 17, 34, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+        html:not(.dark) .glass-card {
+            background: rgba(255, 255, 255, 0.88);
+            border: 1px solid rgba(15, 23, 42, 0.15);
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.15);
+        }
+        .station-btn.active {
+            color: #38bdf8;
+            font-weight: 600;
+        }
+        html:not(.dark) .station-btn.active {
+            color: #0284c7;
+        }
+        /* Dynamic text contrast: original crisp night glow in dark mode, deep slate in day mode */
+        .dynamic-sky-text {
+            color: #f8fafc;
+            text-shadow:
+                0 2px 6px rgba(2, 6, 23, 0.98),
+                0 8px 28px rgba(2, 6, 23, 0.92),
+                0 0 52px rgba(2, 6, 23, 0.85);
+        }
+        html:not(.dark) .dynamic-sky-text {
+            color: #0f172a;
+            text-shadow: 0 1px 2px rgba(255, 255, 255, 0.85);
+        }
+        /* High-contrast accent overrides for Morning/Day mode */
+        html:not(.dark) .day-accent-sky {
+            color: #0284c7 !important;
+        }
+        html:not(.dark) .day-accent-emerald {
+            color: #059669 !important;
+        }
+        html:not(.dark) .day-accent-amber {
+            color: #d97706 !important;
+        }
+        html:not(.dark) .day-accent-purple {
+            color: #7c3aed !important;
+        }
+        .kinetic-stat {
+            font-family: 'Space Grotesk', sans-serif;
+            letter-spacing: -0.04em;
+            line-height: 0.92;
+        }
+        html:not(.dark) .day-boxed-content:empty { display: none !important; }
+        /* Stage cards may extend below the short scroll layer on laptop screens. */
+        #world-cards-layer { overflow: visible !important; }
+        html:not(.dark) #scroll-card-3 .day-boxed-content {
+            border-radius: 1.75rem;
+            background-clip: padding-box;
+        }
+    </style>
+
+    <style id="local-layout-fallback">
+        html:not(.tailwind-ready) body { color: #f8fafc; }
+        html:not(.tailwind-ready):not(.dark) body { color: #0f172a; }
+        html:not(.tailwind-ready) button { cursor: pointer; font: inherit; border: 0; background: transparent; color: inherit; }
+        html:not(.tailwind-ready) button:hover { opacity: .8; }
+        html:not(.tailwind-ready) .hidden { display: none !important; }
+        html:not(.tailwind-ready) header { position: fixed; inset: 0 0 auto; height: 48px; z-index: 40; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; }
+        html:not(.tailwind-ready) header > div, html:not(.tailwind-ready) header nav { display: flex; align-items: center; gap: 12px; }
+        html:not(.tailwind-ready) header button { font: 11px 'JetBrains Mono', monospace; }
+        html:not(.tailwind-ready) header .station-btn.active { color: #38bdf8; }
+        html:not(.tailwind-ready) #theme-toggle-btn { width: 56px; height: 28px; border-radius: 999px; border: 1px solid #475569; background: #1e293b; display: flex; align-items: center; justify-content: space-between; padding: 2px; position: relative; }
+        html:not(.tailwind-ready) #theme-knob { position: absolute; top: 2px; left: 2px; width: 24px; height: 22px; border-radius: 999px; background: #38bdf8; }
+        html:not(.tailwind-ready) #theme-toggle-btn svg { width: 14px; height: 14px; }
+        html:not(.tailwind-ready) #hero-brand { position: fixed; inset: 0 0 auto; height: 64vh; z-index: 30; pointer-events: none; }
+        html:not(.tailwind-ready) #hero-left-cluster, html:not(.tailwind-ready) #hero-right-cluster { position: absolute; pointer-events: auto; }
+        html:not(.tailwind-ready) #hero-left-cluster { left: 7vw; top: 11vh; max-width: 560px; }
+        html:not(.tailwind-ready) #hero-right-cluster { right: 8vw; top: 18vh; max-width: 340px; text-align: right; }
+        html:not(.tailwind-ready) #hero-left-cluster h1 { font: 700 clamp(56px, 6vw, 96px)/1 'Space Grotesk', sans-serif; letter-spacing: -.05em; margin: 8px 0; }
+        html:not(.tailwind-ready) #hero-left-cluster p, html:not(.tailwind-ready) #hero-right-cluster p { line-height: 1.45; }
+        html:not(.tailwind-ready) #hero-left-cluster > div:last-child { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px; }
+        html:not(.tailwind-ready) #hero-left-cluster button { font: 700 12px 'JetBrains Mono', monospace; text-decoration: underline; color: #38bdf8; }
+        html:not(.tailwind-ready) #hero-left-cluster #fault-btn { color: #fb7185; }
+        html:not(.tailwind-ready) #hero-left-cluster #reset-btn { color: #34d399; }
+        html:not(.tailwind-ready) #hero-right-cluster .kinetic-stat { color: #38bdf8; font-size: 64px; }
+        html:not(.tailwind-ready) #world-cards-layer { position: fixed; inset: 0 0 auto; height: 62vh; z-index: 30; pointer-events: none; overflow: visible; }
+        html:not(.tailwind-ready) .scroll-stage-card { position: absolute; inset: 0; opacity: 0; }
+        html:not(.tailwind-ready) .stage-left-block, html:not(.tailwind-ready) .stage-right-block { position: absolute; max-width: 460px; }
+        html:not(.tailwind-ready) .stage-left-block { left: 7vw; top: 15vh; }
+        html:not(.tailwind-ready) .stage-right-block { right: 7vw; top: 26vh; text-align: right; }
+        html:not(.tailwind-ready) .scroll-stage-card h2 { font: 700 clamp(30px, 4vw, 48px)/1.05 'Space Grotesk', sans-serif; margin: 10px 0; }
+        html:not(.tailwind-ready) .scroll-stage-card p { line-height: 1.45; }
+        html:not(.tailwind-ready) #telemetry-drawer { position: fixed; z-index: 45; right: 24px; bottom: 16px; width: min(430px, 92vw); padding: 16px; border-radius: 16px; transform: translateY(0); opacity: 1; transition: transform .3s, opacity .3s; font-size: 12px; }
+        html:not(.tailwind-ready) #telemetry-drawer.translate-y-\[120\%\] { transform: translateY(120%); }
+        html:not(.tailwind-ready) #telemetry-drawer.opacity-0 { opacity: 0; }
+        html:not(.tailwind-ready) #telemetry-drawer.pointer-events-none { pointer-events: none; }
+        html:not(.tailwind-ready) #telemetry-drawer > div { margin-bottom: 10px; }
+        html:not(.tailwind-ready) #telemetry-drawer button { font: 11px 'JetBrains Mono', monospace; margin-right: 6px; }
+        html:not(.tailwind-ready) #telemetry-drawer pre { overflow-x: auto; background: #020617; padding: 10px; border-radius: 8px; }
+        html:not(.tailwind-ready):not(.dark) #telemetry-drawer pre { color: #0f172a; background: #e2e8f0; }
+        html:not(.tailwind-ready) .dynamic-sky-text { color: #f8fafc; }
+        html:not(.tailwind-ready):not(.dark) .dynamic-sky-text { color: #0f172a; }
+        @media (min-width: 801px) {
+            html:not(.tailwind-ready) #hero-right-cluster.hidden, html:not(.tailwind-ready) .stage-right-block.hidden { display: block !important; }
+            html:not(.tailwind-ready) header nav.hidden { display: flex !important; }
+            html:not(.tailwind-ready) header button.hidden { display: inline-flex !important; }
+        }
+        @media (max-width: 800px) {
+            html:not(.tailwind-ready) header nav, html:not(.tailwind-ready) #hero-right-cluster, html:not(.tailwind-ready) .stage-right-block { display: none; }
+            html:not(.tailwind-ready) #hero-left-cluster { left: 5vw; top: 10vh; max-width: 90vw; }
+            html:not(.tailwind-ready) #hero-left-cluster h1 { font-size: 56px; }
+        }
+    </style>
+
+    <style>
+    .console-link{display:inline-flex;align-items:center;padding:8px 13px;border:1px solid rgba(56,189,248,.4);border-radius:999px;background:rgba(14,165,233,.16);color:#7dd3fc;font:600 11px "JetBrains Mono",monospace;text-decoration:none;white-space:nowrap;pointer-events:auto}
+    .console-link:hover{background:rgba(14,165,233,.3)}
+    html:not(.dark) .console-link{color:#0284c7}
+    .stage-console-link{margin-top:20px;padding:12px 16px;white-space:normal}
+    #landing-scenarios{position:fixed;bottom:18px;left:22px;z-index:35;display:flex;align-items:center;gap:7px;flex-wrap:wrap;max-width:calc(100vw - 44px);padding:10px 12px;border-radius:12px;background:rgba(10,17,34,.85);border:1px solid rgba(148,163,184,.25);backdrop-filter:blur(16px);color:#cbd5e1;font:10px "JetBrains Mono",monospace}
+    #landing-scenarios button{cursor:pointer;border:1px solid rgba(148,163,184,.25);border-radius:5px;padding:6px 8px;background:transparent;color:inherit;font:inherit}
+    #landing-scenarios button[aria-pressed=true]{color:#38bdf8;border-color:#38bdf8}
+    html:not(.dark) #landing-scenarios{background:rgba(255,255,255,.88);color:#334155}
+    #landing-scenarios label{display:flex;align-items:center;gap:5px}
+    @media(max-width:1250px){header nav{display:none!important}}
+    @media(max-width:650px){header #header-reset-btn{display:none}header .console-link{padding:7px 9px;font-size:9px}#landing-scenarios{font-size:9px;bottom:12px;left:12px}.stage-console-link{font-size:10px}}
+    </style>
+</head>
+<body class="text-slate-100 antialiased selection:bg-sky-500 selection:text-white">
+
+    <canvas id="realistic-world-canvas"></canvas>
+
+    <!-- Virtual Scroll Runway for native scrollbar synchronization -->
+    <div id="scroll-runway"></div>
+
+    <header class="fixed top-0 left-0 right-0 h-12 z-40 transparent-header px-4 sm:px-6 flex items-center justify-between">
+        <!-- Left Status Indicator -->
+        <div class="flex items-center gap-2.5">
+            <span id="nav-status-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span class="font-display font-bold text-sm tracking-tight dynamic-sky-text">GridPulse</span>
+            <span class="hidden sm:inline-block text-[11px] font-mono dynamic-sky-text opacity-80 border-l border-current pl-2.5">
+                FalkorDB + GraphBLAS Engine
+            </span>
+        </div>
+
+        <!-- Center Corridor Waypoints -->
+        <nav class="hidden md:flex items-center gap-1.5">
+            <button onclick="scrollToStation(0)" id="station-0" class="station-btn active text-[11px] font-mono px-2.5 py-1 rounded-md border border-transparent dynamic-sky-text opacity-90 hover:opacity-100 transition">
+                01. Alpine Wilderness
+            </button>
+            <span class="dynamic-sky-text opacity-60 text-xs">→</span>
+            <button onclick="scrollToStation(0.32)" id="station-1" class="station-btn text-[11px] font-mono px-2.5 py-1 rounded-md border border-transparent dynamic-sky-text opacity-90 hover:opacity-100 transition">
+                02. 500kV Corridor
+            </button>
+            <span class="dynamic-sky-text opacity-60 text-xs">→</span>
+            <button onclick="scrollToStation(0.62)" id="station-2" class="station-btn text-[11px] font-mono px-2.5 py-1 rounded-md border border-transparent dynamic-sky-text opacity-90 hover:opacity-100 transition">
+                03. Valley Suburbs
+            </button>
+            <span class="dynamic-sky-text opacity-60 text-xs">→</span>
+            <button onclick="scrollToStation(0.95)" id="station-3" class="station-btn text-[11px] font-mono px-2.5 py-1 rounded-md border border-transparent dynamic-sky-text opacity-90 hover:opacity-100 transition">
+                04. Smart City
+            </button>
+        </nav>
+
+        <!-- Right Minimal Controls & Sun / Moon Switch -->
+        <div class="flex items-center gap-2.5">
+            <button
+                onclick="triggerFaultSimulation()"
+                class="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-rose-500 hover:text-rose-400 transition px-2 py-1"
+                title="Inject 500kV Fault on Span 03"
+            >
+                <span id="nav-fault-label">Inject Fault</span>
+            </button>
+            <button id="header-reset-btn" onclick="resetGridSimulation()" class="text-[11px] font-mono font-semibold text-emerald-400 hover:text-emerald-300 transition px-2 py-1" title="Reset Grid">Reset Grid</button>
+            <a data-console-link class="console-link" href="login.html">Launch Console →</a>
+            <button
+                id="theme-toggle-btn"
+                onclick="toggleDayNight()"
+                aria-label="Toggle Day and Night Landscape"
+                title="Switch Day / Night Atmosphere"
+                class="relative w-14 h-7 rounded-full p-0.5 bg-slate-800/90 border border-slate-700 flex items-center justify-between transition-colors duration-300 focus:outline-none"
+            >
+                <span id="theme-knob" class="absolute left-0.5 top-0.5 w-6 h-5 rounded-full bg-sky-500 shadow transition-transform duration-300 translate-x-6"></span>
+                <span class="relative z-10 w-6 h-6 flex items-center justify-center text-slate-400">
+                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707-.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+                    </svg>
+                </span>
+                <span class="relative z-10 w-6 h-6 flex items-center justify-center text-slate-950">
+                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+                    </svg>
+                </span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Initial View (0% Scroll) -->
+    <main id="hero-brand" class="fixed inset-x-0 top-0 h-[64vh] z-30 pointer-events-none will-change-transform">
+        <div id="hero-left-cluster" class="pointer-events-auto dynamic-sky-text day-boxed-content absolute top-[11vh] left-[6vw] sm:left-[7vw] max-w-xl">
+            <div class="flex items-center gap-2.5 mb-2">
+                <span class="h-[2px] w-7 bg-sky-400 inline-block"></span>
+                <span class="text-[11px] sm:text-xs font-mono font-bold uppercase tracking-[0.22em] text-sky-400 day-accent-sky">
+                    AUTONOMOUS GRID INTERCEPTOR
+                </span>
+            </div>
+            <h1 class="font-display font-bold text-6xl sm:text-8xl tracking-tighter leading-none">
+                GridPulse
+            </h1>
+            <p id="corridor-subtitle" class="mt-3 text-sm sm:text-lg font-semibold max-w-md leading-snug opacity-90">
+                Scroll or drag to trace 500kV current from the alpine headwaters into the Smart City grid.
+            </p>
+            <div class="mt-5 flex flex-wrap items-center gap-5">
+                <button id="fault-btn" onclick="triggerFaultSimulation()" class="text-xs sm:text-sm font-mono font-bold text-rose-400 hover:text-rose-300 underline decoration-2 underline-offset-8 transition">
+                    <span id="fault-btn-label">Inject Fault (Span 03)</span>
+                </button>
+                <button id="reset-btn" onclick="resetGridSimulation()" class="hidden text-xs sm:text-sm font-mono font-bold text-emerald-400 hover:text-emerald-300 underline decoration-2 underline-offset-8 transition">Reset Grid</button>
+                <button onclick="toggleTelemetryDrawer()" class="text-xs sm:text-sm font-mono font-bold text-sky-400 hover:text-sky-300 underline decoration-2 underline-offset-8 transition">
+                    FalkorDB Trace <span id="drawer-chevron" class="text-[10px]">▼</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="hero-right-cluster" class="hidden md:block dynamic-sky-text day-boxed-content absolute top-[18vh] right-[6vw] lg:right-[8vw] max-w-sm text-right">
+            <div class="kinetic-stat text-5xl lg:text-6xl font-bold text-sky-400 day-accent-sky">
+                1.4<span class="text-2xl lg:text-3xl font-mono font-semibold ml-1">ms</span>
+            </div>
+            <div class="mt-1 text-xs font-mono font-bold uppercase tracking-[0.18em] text-emerald-400 day-accent-emerald">
+                ● FALKORDB + GRAPHBLAS MATRIX
+            </div>
+            <p class="mt-2 text-xs sm:text-sm font-mono font-semibold leading-relaxed opacity-85">
+                Multi-hop cascade prediction across 9 HV towers &amp; 23 city high-rises before thermal trip.
+            </p>
+        </div>
+    </main>
+
+    <!-- Scroll-Driven Staggered Sky Typography (No boxes, dynamic diagonal offsets on both sides) -->
+    <div id="world-cards-layer" class="fixed inset-x-0 top-0 z-30 pointer-events-none overflow-hidden h-[62vh]">
+
+        <!-- Stage 01: Left High (15vh) / Right Low (28vh) -->
+        <section id="scroll-card-0" class="scroll-stage-card absolute inset-0 pointer-events-none opacity-0">
+            <!-- Left Side Block -->
+            <div class="stage-left-block dynamic-sky-text day-boxed-content absolute top-[14vh] left-[6vw] sm:left-[7vw] max-w-lg will-change-transform">
+                <div class="flex items-center gap-3">
+                    <span class="font-display font-bold text-3xl sm:text-4xl text-sky-500 dark:text-sky-400 opacity-90">01</span>
+                    <span class="h-[2px] w-8 bg-sky-400"></span>
+                    <span class="text-xs font-mono font-bold uppercase tracking-[0.2em] text-sky-700 dark:text-sky-300">
+                        GRAPHBLAS TOPOLOGY ENGINE
+                    </span>
+                </div>
+                <h2 class="mt-2 font-display font-bold text-3xl sm:text-5xl text-slate-950 dark:text-white tracking-tight leading-[1.05]">
+                    Sub-Millisecond<br>Grid Matrix
+                </h2>
+                <p class="mt-3 text-sm sm:text-base font-medium text-slate-900 dark:text-slate-100 leading-relaxed max-w-md">
+                    Electrical power flow maps 1:1 to sparse adjacency matrices. FalkorDB models alpine hydro generators, substations, and 500kV lines with live thermal limits.
+                </p>
+            </div>
+
+            <!-- Right Side Block (Staggered lower & offset inward) -->
+            <div class="stage-right-block dynamic-sky-text day-boxed-content absolute top-[27vh] right-[6vw] sm:right-[8vw] max-w-sm text-left md:text-right will-change-transform hidden sm:block">
+                <div class="kinetic-stat text-5xl sm:text-6xl font-bold text-emerald-600 dark:text-emerald-400">
+                    840 <span class="text-2xl sm:text-3xl font-mono text-slate-950 dark:text-white">MW</span>
+                </div>
+                <div class="mt-1.5 text-xs font-mono font-bold uppercase tracking-[0.18em] text-sky-700 dark:text-sky-300">
+                    Y-BUS SPARSE ADMITTANCE GRAPH
+                </div>
+                <p class="mt-2 text-xs sm:text-sm font-mono font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
+                    (:HydroPlant)-[:FEEDS {mw: 840}]-&gt;(:Tower_T1)<br>
+                    <span class="text-sky-700 dark:text-sky-300">Zero SQL joins • Pure linear algebra</span>
+                </p>
+            </div>
+        </section>
+
+        <!-- Stage 02: Left Low (25vh) / Right High (13vh) for Asymmetric Rhythm -->
+        <section id="scroll-card-1" class="scroll-stage-card absolute inset-0 pointer-events-none opacity-0">
+            <!-- Left Side Block (Dropped lower on left) -->
+            <div class="stage-left-block dynamic-sky-text day-boxed-content absolute top-[23vh] left-[7vw] sm:left-[9vw] max-w-lg will-change-transform">
+                <div class="flex items-center gap-3">
+                    <span class="font-display font-bold text-3xl sm:text-4xl text-amber-500 dark:text-amber-300">02</span>
+                    <span class="h-[2px] w-8 bg-amber-400"></span>
+                    <span class="text-xs font-mono font-bold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">
+                        MULTI-HOP BLAST RADIUS
+                    </span>
+                </div>
+                <h2 class="mt-2 font-display font-bold text-3xl sm:text-5xl text-slate-950 dark:text-white tracking-tight leading-[1.05]">
+                    Tracing Cascades<br>4–6 Hops Ahead
+                </h2>
+                <p class="mt-3 text-sm sm:text-base font-medium text-slate-900 dark:text-slate-100 leading-relaxed max-w-md">
+                    When lightning trips a primary corridor, excess megawatts surge across parallel spans. GridPulse traverses 5 hops to pinpoint transformers headed for collapse.
+                </p>
+            </div>
+
+            <!-- Right Side Block (Elevated higher on right) -->
+            <div class="stage-right-block dynamic-sky-text day-boxed-content absolute top-[13vh] right-[6vw] sm:right-[7vw] max-w-sm text-left md:text-right will-change-transform hidden sm:block">
+                <div class="kinetic-stat text-5xl sm:text-6xl font-bold text-amber-500 dark:text-amber-300">
+                    90<span class="text-2xl sm:text-3xl font-mono text-slate-950 dark:text-white ml-1">sec</span>
+                </div>
+                <div class="mt-1.5 text-xs font-mono font-bold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
+                    EARLY THERMAL COLLAPSE INTERCEPTION
+                </div>
+                <p class="mt-2 text-xs sm:text-sm font-mono font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
+                    MATCH p=(t:Tower)-[:SPAN*1..6]-&gt;(sub)<br>
+                    <span class="text-amber-700 dark:text-amber-300">Isolates fault before physical relay blowout</span>
+                </p>
+            </div>
+        </section>
+
+        <!-- Stage 03: Left High (14vh) / Right Low (28vh) -->
+        <section id="scroll-card-2" class="scroll-stage-card absolute inset-0 pointer-events-none opacity-0">
+            <!-- Left Side Block -->
+            <div class="stage-left-block dynamic-sky-text day-boxed-content absolute top-[14vh] left-[6vw] sm:left-[8vw] max-w-lg will-change-transform">
+                <div class="flex items-center gap-3">
+                    <span class="font-display font-bold text-3xl sm:text-4xl text-emerald-500 dark:text-emerald-300">03</span>
+                    <span class="h-[2px] w-8 bg-emerald-400"></span>
+                    <span class="text-xs font-mono font-bold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                        SCADA MCP &amp; BESS DISPATCH
+                    </span>
+                </div>
+                <h2 class="mt-2 font-display font-bold text-3xl sm:text-5xl text-slate-950 dark:text-white tracking-tight leading-[1.05]">
+                    Autonomous Battery<br>&amp; Breaker Control
+                </h2>
+                <p class="mt-3 text-sm sm:text-base font-medium text-slate-900 dark:text-slate-100 leading-relaxed max-w-md">
+                    Instead of blind regional blackouts, the agent discovers BESS batteries within 2 hops via MCP tools and injects local power while shedding only Tier-3 heavy industry.
+                </p>
+            </div>
+
+            <!-- Right Side Block -->
+            <div class="stage-right-block dynamic-sky-text day-boxed-content absolute top-[28vh] right-[6vw] sm:right-[8vw] max-w-sm text-left md:text-right will-change-transform hidden sm:block">
+                <div class="kinetic-stat text-5xl sm:text-6xl font-bold text-sky-600 dark:text-sky-300">
+                    +45 <span class="text-2xl sm:text-3xl font-mono text-slate-950 dark:text-white">MW</span>
+                </div>
+                <div class="mt-1.5 text-xs font-mono font-bold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
+                    LOCAL BESS INVERTER INJECTION
+                </div>
+                <p class="mt-2 text-xs sm:text-sm font-mono font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
+                    scada_trip_breaker('BRK_IND_12')<br>
+                    <span class="text-emerald-700 dark:text-emerald-300">Valley cabins &amp; suburbs stay 100% lit</span>
+                </p>
+            </div>
+        </section>
+
+        <!-- Stage 04: Left Mid (21vh) / Right High (13vh) -->
+        <section id="scroll-card-3" class="scroll-stage-card absolute inset-0 pointer-events-none opacity-0">
+            <!-- Left Side Block -->
+            <div class="stage-left-block dynamic-sky-text day-boxed-content absolute top-[21vh] left-[6vw] sm:left-[7vw] max-w-lg will-change-transform">
+                <div class="flex items-center gap-3">
+                    <span class="font-display font-bold text-3xl sm:text-4xl text-purple-600 dark:text-purple-300">04</span>
+                    <span class="h-[2px] w-8 bg-purple-400"></span>
+                    <span class="text-xs font-mono font-bold uppercase tracking-[0.2em] text-purple-700 dark:text-purple-300">
+                        CRITICAL ASSET SHIELDING
+                    </span>
+                </div>
+                <h2 class="mt-2 font-display font-bold text-3xl sm:text-5xl text-slate-950 dark:text-white tracking-tight leading-[1.05]">
+                    Zero-Guessing Shield<br>for Tier-1 Hospitals
+                </h2>
+                <p class="mt-3 text-sm sm:text-base font-medium text-slate-900 dark:text-slate-100 leading-relaxed max-w-md">
+                    Every action is backed by a deterministic Cypher audit trail—keeping St. Jude Regional Trauma Center and 23 metropolitan high-rises energized without hallucination.
+                </p>
+                <a class="console-link stage-console-link" href="login.html">Enter Live SCADA Command Center →</a>
+            </div>
+
+            <!-- Right Side Block -->
+            <div class="stage-right-block dynamic-sky-text day-boxed-content absolute top-[13vh] right-[6vw] sm:right-[8vw] max-w-sm text-left md:text-right will-change-transform hidden sm:block">
+                <div class="kinetic-stat text-5xl sm:text-6xl font-bold text-emerald-600 dark:text-emerald-400">
+                    100<span class="text-2xl sm:text-3xl font-mono text-slate-950 dark:text-white ml-1">%</span>
+                </div>
+                <div class="mt-1.5 text-xs font-mono font-bold uppercase tracking-[0.18em] text-sky-700 dark:text-sky-300">
+                    ST. JUDE TRAUMA CENTER ONLINE
+                </div>
+                <p class="mt-2 text-xs sm:text-sm font-mono font-medium text-slate-900 dark:text-slate-100 leading-relaxed">
+                    23 High-Rises Energized • NERC Compliant<br>
+                    <span class="text-emerald-700 dark:text-emerald-300">Explainable multi-hop graph trace verified</span>
+                </p>
+            </div>
+        </section>
+    </div>
+
+    <aside
+        id="telemetry-drawer"
+        class="fixed bottom-4 right-4 sm:right-6 z-30 w-[92vw] sm:w-[430px] glass-card rounded-xl p-4 transition-all duration-300 translate-y-[120%] opacity-0 pointer-events-none"
+    >
+        <div class="flex items-center justify-between border-b border-slate-300/40 dark:border-slate-700/60 pb-2.5 mb-3">
+            <div class="flex items-center gap-2">
+                <span id="hud-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <h2 id="hud-status-title" class="font-mono text-xs font-semibold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                    NOMINAL CORRIDOR FLOW (500kV)
+                </h2>
+            </div>
+            <button onclick="toggleTelemetryDrawer()" class="text-xs font-mono text-slate-500 hover:text-slate-300 px-1.5 py-0.5 rounded">
+                Hide ✕
+            </button>
+        </div>
+
+        <!-- Live Metrics Row -->
+        <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+            <div class="rounded-lg bg-slate-900/50 dark:bg-slate-950/60 p-2 border border-slate-700/40">
+                <div class="text-[10px] font-mono text-slate-400">GRAPHBLAS LATENCY</div>
+                <div id="metric-latency" class="font-mono text-sm font-bold text-sky-400">1.4 ms</div>
+            </div>
+            <div class="rounded-lg bg-slate-900/50 dark:bg-slate-950/60 p-2 border border-slate-700/40">
+                <div class="text-[10px] font-mono text-slate-400">CITY GRID LOAD</div>
+                <div id="metric-city-load" class="font-mono text-sm font-bold text-emerald-400">0% (Standby)</div>
+            </div>
+            <div class="rounded-lg bg-slate-900/50 dark:bg-slate-950/60 p-2 border border-slate-700/40">
+                <div class="text-[10px] font-mono text-slate-400">TIER-1 HOSPITAL</div>
+                <div id="metric-hospital" class="font-mono text-sm font-bold text-emerald-400">PROTECTED</div>
+            </div>
+        </div>
+
+        <!-- Cypher Query Tabs -->
+        <div class="flex items-center justify-between gap-1 mb-2">
+            <div class="flex gap-1">
+                <button onclick="selectCypherTab(0)" id="cypher-tab-0" class="px-2 py-1 rounded text-[10px] font-mono bg-sky-500/20 text-sky-300 border border-sky-500/40">
+                    1. Multi-Hop Trace
+                </button>
+                <button onclick="selectCypherTab(1)" id="cypher-tab-1" class="px-2 py-1 rounded text-[10px] font-mono text-slate-400 hover:text-slate-200 border border-transparent">
+                    2. Load Shedding
+                </button>
+                <button onclick="selectCypherTab(2)" id="cypher-tab-2" class="px-2 py-1 rounded text-[10px] font-mono text-slate-400 hover:text-slate-200 border border-transparent">
+                    3. BESS Dispatch
+                </button>
+            </div>
+            <button onclick="copyCypherCode()" id="copy-cypher-btn" class="text-[10px] font-mono text-slate-400 hover:text-sky-400 px-2 py-0.5 rounded border border-slate-700">
+                Copy
+            </button>
+        </div>
+
+        <!-- Cypher Code Box -->
+        <pre id="cypher-code-box" class="text-[11px] font-mono bg-slate-950/90 text-sky-300 p-2.5 rounded-lg overflow-x-auto border border-slate-800 leading-relaxed">MATCH path = (t1:Tower {id:'T3'})-[:SPAN*1..6]->(sub:Substation)
+WHERE sub.city = 'MetroGrid'
+RETURN path, sub.capacity_mw;</pre>
+
+        <!-- Agent Action Log -->
+        <div id="agent-log-line" class="mt-2.5 text-[11px] font-mono text-slate-600 dark:text-slate-300 flex items-center justify-between">
+            <span>MCP Agent: Monitoring 9 HV spans & 23 city high-rises.</span>
+            <span id="scroll-pct-readout" class="text-sky-400 font-semibold">0%</span>
+        </div>
+    </aside>
+
+    <script>
+        const canvas = document.getElementById('realistic-world-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // 7200x1200 virtual panoramic coordinate space
+        const WORLD_WIDTH = 7200;
+        const WORLD_HEIGHT = 1200;
+
+        // Interactive & Animation State
+        let isNightMode = document.documentElement.classList.contains('dark');       // Starts in dramatic night mode; toggle switches smoothly
+        let nightMix = isNightMode ? 1.0 : 0.0;           // 0.0 = Golden Morning Day, 1.0 = Deep Night
+        let targetScrollProgress = 0; // [0..1]
+        let smoothScrollProgress = 0; // [0..1] 60fps interpolated
+        let animTime = 0;
+
+        // Fault & MCP Mitigation State
+        let isFaultActive = false;
+        let isRerouted = false;
+        let lightningFlashAlpha = 0;
+        let isDrawerOpen = false;
+
+        // Cypher Queries for the FalkorDB HUD
+        const cypherQueries = [
+            "MATCH path = (t1:Tower {id:'T3'})-[:SPAN*1..6]->(sub:Substation)\nWHERE sub.city = 'MetroGrid'\nRETURN path, sub.capacity_mw;",
+            "MATCH (f:Span {id:'TX_882'})-[:FEEDS*1..4]->(load:Consumer)\nWHERE load.priority_tier = 3\nRETURN load.breaker_id, load.mw_demand;",
+            "MATCH (sub:Substation {id:'SUB_METRO'})<-[:CONNECTED]-(b:BESS)\nWHERE b.soc_pct > 40\nRETURN b.id, b.max_discharge_mw;"
+        ];
+        let activeCypherIndex = 0;
+
+        const scrollStageWindows = [
+            { id: 'scroll-card-0', start: 0.05, peakStart: 0.13, peakEnd: 0.26, end: 0.35, curOpacity: 0, curPhase: -1 },
+            { id: 'scroll-card-1', start: 0.30, peakStart: 0.38, peakEnd: 0.53, end: 0.62, curOpacity: 0, curPhase: -1 },
+            { id: 'scroll-card-2', start: 0.57, peakStart: 0.65, peakEnd: 0.78, end: 0.86, curOpacity: 0, curPhase: -1 },
+            { id: 'scroll-card-3', start: 0.81, peakStart: 0.89, peakEnd: 1.00, end: 1.12, curOpacity: 0, curPhase: -1 }
+        ];
+        let smoothHeroAlpha = 1.0;
+
+        const towers = [
+            { id: 'T1', x: 520,  baseY: 855, h: 270 },
+            { id: 'T2', x: 1080, baseY: 875, h: 265 },
+            { id: 'T3', x: 1660, baseY: 890, h: 275 },
+            { id: 'T4', x: 2260, baseY: 912, h: 260 },
+            { id: 'T5', x: 2860, baseY: 925, h: 270 },
+            { id: 'T6', x: 3480, baseY: 940, h: 265 },
+            { id: 'T7', x: 4090, baseY: 952, h: 275 },
+            { id: 'T8', x: 4690, baseY: 965, h: 265 },
+            { id: 'T9', x: 5190, baseY: 978, h: 255 }
+        ];
+        const substationPort = { x: 5545, y: 865 };
+
+        // Stationary Starfield (Night mode only - never blinks or moves)
+        const stars = Array.from({ length: 160 }, (_, i) => ({
+            x: (i * 173 + 97) % 7000,
+            y: (i * 89 + 23) % 540,
+            r: (i % 3 === 0) ? 1.5 : 1.0,
+            alpha: 0.35 + ((i * 31) % 60) / 100
+        }));
+
+        // Soft multi-layered volumetric cloud banks with organic puffs
+        const clouds = [
+            {
+                x: 420, y: 185, speed: 14, scale: 1.05,
+                puffs: [
+                    { dx: -110, dy: 14, rx: 115, ry: 36 },
+                    { dx: -45,  dy: -10, rx: 135, ry: 48 },
+                    { dx: 35,   dy: -16, rx: 150, ry: 54 },
+                    { dx: 115,  dy: 6,   rx: 125, ry: 40 },
+                    { dx: 0,    dy: 18,  rx: 175, ry: 38 }
+                ]
+            },
+            {
+                x: 1220, y: 140, speed: 18, scale: 1.15,
+                puffs: [
+                    { dx: -130, dy: 16, rx: 125, ry: 38 },
+                    { dx: -55,  dy: -14, rx: 155, ry: 56 },
+                    { dx: 30,   dy: -22, rx: 165, ry: 60 },
+                    { dx: 110,  dy: -4,  rx: 140, ry: 48 },
+                    { dx: 170,  dy: 16,  rx: 110, ry: 34 },
+                    { dx: 15,   dy: 20,  rx: 195, ry: 42 }
+                ]
+            },
+            {
+                x: 2180, y: 175, speed: 12, scale: 1.0,
+                puffs: [
+                    { dx: -105, dy: 12, rx: 110, ry: 35 },
+                    { dx: -30,  dy: -15, rx: 140, ry: 50 },
+                    { dx: 55,   dy: -8,  rx: 135, ry: 46 },
+                    { dx: 125,  dy: 14,  rx: 105, ry: 34 },
+                    { dx: 10,   dy: 18,  rx: 165, ry: 36 }
+                ]
+            },
+            {
+                x: 3140, y: 150, speed: 16, scale: 1.2,
+                puffs: [
+                    { dx: -140, dy: 14, rx: 130, ry: 40 },
+                    { dx: -60,  dy: -18, rx: 160, ry: 58 },
+                    { dx: 25,   dy: -24, rx: 170, ry: 62 },
+                    { dx: 115,  dy: -6,  rx: 145, ry: 50 },
+                    { dx: 180,  dy: 14,  rx: 115, ry: 36 },
+                    { dx: 15,   dy: 22,  rx: 210, ry: 44 }
+                ]
+            },
+            {
+                x: 4200, y: 185, speed: 15, scale: 0.98,
+                puffs: [
+                    { dx: -95, dy: 12, rx: 105, ry: 34 },
+                    { dx: -20, dy: -14, rx: 135, ry: 48 },
+                    { dx: 60,  dy: -10, rx: 130, ry: 45 },
+                    { dx: 125, dy: 12,  rx: 100, ry: 32 },
+                    { dx: 15,  dy: 16,  rx: 155, ry: 35 }
+                ]
+            },
+            {
+                x: 5280, y: 160, speed: 13, scale: 1.08,
+                puffs: [
+                    { dx: -115, dy: 14, rx: 120, ry: 38 },
+                    { dx: -35,  dy: -16, rx: 145, ry: 52 },
+                    { dx: 50,   dy: -12, rx: 140, ry: 48 },
+                    { dx: 130,  dy: 10,  rx: 115, ry: 36 },
+                    { dx: 10,   dy: 18,  rx: 175, ry: 38 }
+                ]
+            }
+        ];
+
+        // Morning bird flocks (Day mode only)
+        const birdFlocks = [
+            { baseX: 780,  baseY: 310, speed: 38, count: 7 },
+            { baseX: 2350, baseY: 265, speed: 44, count: 6 },
+            { baseX: 3950, baseY: 290, speed: 35, count: 8 }
+        ];
+
+        // Natural granite boulders nestled across the riverbank & meadow
+        const wildernessBoulders = [
+            { x: 95,   yOff: 18,  r: 22, aspect: 0.62, moss: true },
+            { x: 525,  yOff: 85,  r: 26, aspect: 0.56, moss: true },
+            { x: 640,  yOff: 95,  r: 27, aspect: 0.58, moss: true },
+            { x: 890,  yOff: 115, r: 24, aspect: 0.60, moss: true },
+            { x: 1210, yOff: 95,  r: 30, aspect: 0.52, moss: false },
+            { x: 1490, yOff: 110, r: 24, aspect: 0.60, moss: true },
+            { x: 1840, yOff: 92,  r: 26, aspect: 0.56, moss: true },
+            { x: 2180, yOff: 105, r: 20, aspect: 0.65, moss: false },
+            { x: 2460, yOff: 96,  r: 23, aspect: 0.58, moss: true }
+        ];
+
+        // Gradual human settlement transition (x = 2880 to 5345):
+        // Starts with isolated mountain cabins, grows into village cottages and 2-3 story suburban homes before the city
+        const valleyHouses = [
+            // Rural Alpine Cabins (sparse, small, warm chimneys, nestled at varied depths on the bank)
+            { x: 2880, yOff: 32, w: 38, h: 24, roofH: 18, floors: 1, windows: 2, chimney: true,  style: 'cabin' },
+            { x: 3190, yOff: 68, w: 42, h: 26, roofH: 20, floors: 1, windows: 2, chimney: true,  style: 'cabin' },
+            { x: 3420, yOff: 28, w: 44, h: 28, roofH: 19, floors: 1, windows: 3, chimney: false, style: 'cabin' },
+            { x: 3640, yOff: 62, w: 48, h: 30, roofH: 21, floors: 1, windows: 3, chimney: true,  style: 'cabin' },
+            // Foothill Village Cottages (medium density)
+            { x: 3840, yOff: 26, w: 54, h: 36, roofH: 20, floors: 2, windows: 3, chimney: true,  style: 'cottage' },
+            { x: 3965, yOff: 64, w: 48, h: 32, roofH: 18, floors: 1, windows: 3, chimney: false, style: 'cottage' },
+            { x: 4160, yOff: 30, w: 58, h: 40, roofH: 22, floors: 2, windows: 4, chimney: true,  style: 'cottage' },
+            { x: 4275, yOff: 60, w: 52, h: 36, roofH: 19, floors: 2, windows: 3, chimney: false, style: 'cottage' },
+            { x: 4410, yOff: 25, w: 62, h: 42, roofH: 22, floors: 2, windows: 4, chimney: true,  style: 'cottage' },
+            // Suburban Townhomes & Low-Rise Dwellings approaching the Smart City
+            { x: 4565, yOff: 52, w: 66, h: 46, roofH: 20, floors: 2, windows: 4, chimney: false, style: 'suburban' },
+            { x: 4660, yOff: 22, w: 58, h: 44, roofH: 18, floors: 2, windows: 4, chimney: true,  style: 'suburban' },
+            { x: 4785, yOff: 48, w: 72, h: 52, roofH: 21, floors: 2, windows: 5, chimney: false, style: 'suburban' },
+            { x: 4890, yOff: 20, w: 64, h: 48, roofH: 19, floors: 2, windows: 4, chimney: false, style: 'suburban' },
+            { x: 4995, yOff: 44, w: 76, h: 58, roofH: 20, floors: 3, windows: 5, chimney: true,  style: 'suburban' },
+            { x: 5105, yOff: 22, w: 68, h: 54, roofH: 18, floors: 3, windows: 4, chimney: false, style: 'suburban' },
+            { x: 5240, yOff: 38, w: 80, h: 64, roofH: 18, floors: 3, windows: 5, chimney: false, style: 'suburban' },
+            { x: 5345, yOff: 24, w: 74, h: 60, roofH: 16, floors: 3, windows: 5, chimney: false, style: 'suburban' }
+        ];
+
+        // 11 Background high-rise buildings for deep metropolitan skyline density
+        const bgCityBuildings = [
+            { x: 5665, w: 95,  h: 270, floors: 20, cols: 5 },
+            { x: 5790, w: 110, h: 390, floors: 28, cols: 6 },
+            { x: 5935, w: 105, h: 460, floors: 34, cols: 5 },
+            { x: 6085, w: 120, h: 380, floors: 26, cols: 6 },
+            { x: 6230, w: 115, h: 510, floors: 36, cols: 6 },
+            { x: 6380, w: 100, h: 440, floors: 30, cols: 5 },
+            { x: 6510, w: 125, h: 530, floors: 38, cols: 6 },
+            { x: 6665, w: 110, h: 490, floors: 35, cols: 5 },
+            { x: 6805, w: 115, h: 420, floors: 30, cols: 6 },
+            { x: 6945, w: 105, h: 470, floors: 33, cols: 5 },
+            { x: 7075, w: 95,  h: 340, floors: 24, cols: 5 }
+        ];
+
+        // 12 Foreground curtain-wall skyscrapers & critical infrastructure (x = 5710 to 7140)
+        const cityBuildings = [
+            { x: 5710, w: 92,  h: 295, floors: 21, cols: 5, spire: false, crown: true },
+            { x: 5812, w: 105, h: 375, floors: 27, cols: 6, spire: true,  crown: false },
+            { x: 5928, w: 118, h: 465, floors: 33, cols: 6, spire: true,  crown: true },
+            { x: 6056, w: 96,  h: 340, floors: 24, cols: 5, spire: false, crown: false },
+            { x: 6162, w: 132, h: 555, floors: 40, cols: 7, spire: true,  crown: true },
+            { x: 6304, w: 185, h: 415, floors: 27, cols: 9, isHospital: true, crown: true },
+            { x: 6500, w: 112, h: 485, floors: 35, cols: 6, spire: false, crown: true },
+            { x: 6622, w: 142, h: 610, floors: 44, cols: 7, spire: true,  crown: true },
+            { x: 6774, w: 104, h: 440, floors: 31, cols: 6, spire: false, crown: false },
+            { x: 6888, w: 124, h: 520, floors: 37, cols: 7, spire: true,  crown: true },
+            { x: 7022, w: 98,  h: 390, floors: 28, cols: 5, spire: false, crown: true },
+            { x: 7130, w: 86,  h: 310, floors: 22, cols: 5, spire: false, crown: false }
+        ];
+
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+
+        function lerpRGB(dayRGB, nightRGB, t) {
+            const r = Math.round(lerp(dayRGB[0], nightRGB[0], t));
+            const g = Math.round(lerp(dayRGB[1], nightRGB[1], t));
+            const b = Math.round(lerp(dayRGB[2], nightRGB[2], t));
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        function lerpRGBA(dayRGB, nightRGB, t, alpha) {
+            const r = Math.round(lerp(dayRGB[0], nightRGB[0], t));
+            const g = Math.round(lerp(dayRGB[1], nightRGB[1], t));
+            const b = Math.round(lerp(dayRGB[2], nightRGB[2], t));
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        function smoothstep(edge0, edge1, x) {
+            const t = Math.max(0, Math.min(1, (x - edge0) / Math.max(0.0001, edge1 - edge0)));
+            return t * t * (3 - 2 * t);
+        }
+
+        // Uneven, natural upper valley land ridge contour with knolls, dips, and rocky terraces
+        function getValleyGroundY(x) {
+            const t = Math.min(1, Math.max(0, x / 5400));
+            const cityFlatten = x > 5100 ? Math.max(0, 1 - (x - 5100) / 450) : 1;
+            const macroMeander = Math.sin(x * 0.0022 + 0.4) * 19 + Math.cos(x * 0.0054 - 0.9) * 12;
+            const mesoKnolls = Math.sin(x * 0.014 + 1.7) * 8.5 + Math.cos(x * 0.029 + 0.5) * 5.2;
+            const microBumps = Math.sin(x * 0.068) * 2.8 + Math.cos(x * 0.135 + 1.1) * 1.6;
+            return 846 + t * 138 + (macroMeander + mesoKnolls + microBumps) * cityFlatten;
+        }
+
+        // Organic, uneven river northern shoreline with coves, gravel bars, and natural bank indentations
+        function getExactRiverTopY(x) {
+            if (x >= 5520) return 1025;
+            const t = Math.max(0, Math.min(1, x / 5400));
+            const mt = 1 - t;
+            const baseCurve = (
+                mt * mt * mt * 1052 +
+                3 * mt * mt * t * 1016 +
+                3 * mt * t * t * 1044 +
+                t * t * t * 1025
+            );
+            // Smoothly taper out natural bank irregularities as the river meets the engineered Smart City harbor wall
+            const naturalBankMask = x > 5050 ? Math.max(0, 1 - (x - 5050) / 470) : 1;
+            const wideBends = Math.sin(x * 0.0031 + 0.6) * 18 + Math.cos(x * 0.0078 - 1.2) * 11.5;
+            const rockyInlets = Math.sin(x * 0.019 + 2.4) * 7.5 + Math.cos(x * 0.043 - 0.7) * 4.8;
+            const bankJaggedness = Math.sin(x * 0.095 + 0.9) * 2.6 + Math.cos(x * 0.18 + 2.1) * 1.5;
+            return baseCurve + (wideBends + rockyInlets + bankJaggedness) * naturalBankMask;
+        }
+
+        // Helper to compute safe dry-land lower boundary above the uneven river shoreline
+        function getRiverShoreY(x) {
+            return getExactRiverTopY(x) - 15;
+        }
+
+        // Precompute multi-layered alpine forest across the entire valley & riverbank slope (5 depth tiers)
+        const forestTrees = [];
+        (function buildDenseRiverbankForest() {
+            const depthRows = [0.02, 0.24, 0.48, 0.72, 0.92];
+            depthRows.forEach((rowFrac, rowIdx) => {
+                for (let x = 25; x < 5380; ) {
+                    // Dense wilderness packing in the first half (x < 2850), gradually opening around village & suburbs
+                    let step = 24 + rowIdx * 2;
+                    if (x >= 2850 && x < 4200) step = 46 + rowIdx * 5;
+                    else if (x >= 4200) step = 78 + rowIdx * 8;
+
+                    const jitterX = ((x * 37 + rowIdx * 73) % 19) - 9;
+                    const tx = x + jitterX;
+                    x += step;
+
+                    // Keep the entire wide waterfall canyon, plunge pool, and wide tributary river channel completely clear of trees
+                    if (tx > 135 && tx < 495) continue;
+
+                    const upperY = getValleyGroundY(tx) - (tx < 2600 ? 10 : 0);
+                    const shoreY = getRiverShoreY(tx);
+                    const rawGroundY = lerp(upperY, shoreY, rowFrac) + ((tx * 13 + rowIdx * 11) % 9) - 4;
+                    const groundY = Math.min(rawGroundY, shoreY - 4);
+
+                    // Avoid placing tall foreground trees directly over tower concrete piers
+                    const nearTowerPad = towers.some(tw => Math.abs(tx - tw.x) < 26 && Math.abs(groundY - tw.baseY) < 22);
+                    if (nearTowerPad) continue;
+
+                    // Avoid overlapping transitional valley houses
+                    const overlapsHouse = valleyHouses.some(h => {
+                        const hy = getValleyGroundY(h.x + h.w * 0.5) + h.yOff;
+                        return tx > h.x - 16 && tx < h.x + h.w + 16 && Math.abs(groundY - hy) < 42;
+                    });
+                    if (overlapsHouse) continue;
+
+                    const seed = (Math.abs(Math.floor(tx)) * 29 + rowIdx * 43) % 41;
+                    const wildernessBoost = tx < 2750 ? 16 : 4;
+                    const treeH = 44 + wildernessBoost + rowIdx * 5 + (seed % 24);
+                    const scale = (0.76 + rowFrac * 0.34) * (tx < 2750 ? 1.06 : 0.92);
+
+                    forestTrees.push({
+                        x: tx,
+                        groundY,
+                        treeH,
+                        scale,
+                        seed,
+                        rowIdx
+                    });
+                }
+            });
+            // Sort back-to-front by groundY so lower riverbank trees naturally overlap upper slope trees
+            forestTrees.sort((a, b) => a.groundY - b.groundY);
+        })();
+
+        // Continuous multi-octave ridge height generator
+        function getRidgeHeight(x, seed, baseAlt, amp) {
+            const n1 = Math.sin(x * 0.0014 + seed) * 0.52;
+            const n2 = Math.sin(x * 0.0037 + seed * 2.1) * 0.28;
+            const n3 = Math.sin(x * 0.0089 - seed * 1.4) * 0.14;
+            const n4 = Math.cos(x * 0.019 + seed * 3.7) * 0.06;
+            const cityTaper = x > 4800 ? Math.max(0.18, 1 - (x - 4800) / 2200) : 1;
+            return baseAlt - (n1 + n2 + n3 + n4) * amp * cityTaper;
+        }
+
+        function resizeCanvas() {
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function drawSkyAndAtmosphere(camX, viewWorldW) {
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, WORLD_HEIGHT);
+            skyGrad.addColorStop(0.0, lerpRGB([28, 100, 178],  [3, 7, 18],   nightMix));
+            skyGrad.addColorStop(0.45,lerpRGB([112, 178, 228], [10, 20, 42], nightMix));
+            skyGrad.addColorStop(0.78,lerpRGB([248, 212, 164], [18, 33, 64], nightMix));
+            skyGrad.addColorStop(1.0, lerpRGB([253, 230, 195], [15, 23, 42], nightMix));
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(camX - 200, 0, WORLD_WIDTH + 400, WORLD_HEIGHT);
+
+            // Stationary Stars in Night Mode
+            if (nightMix > 0.05) {
+                ctx.save();
+                stars.forEach(st => {
+                    const sx = st.x + camX * 0.72;
+                    if (sx < camX - 100 || sx > camX + 2800) return;
+                    ctx.fillStyle = `rgba(226, 232, 240, ${st.alpha * nightMix})`;
+                    ctx.beginPath();
+                    ctx.arc(sx, st.y, st.r, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.restore();
+            }
+
+            // Dynamic in-frame celestial trajectory:
+            // Glides smoothly across the visible sky from right-center (72% of viewport) to left-center (28% of viewport)
+            // with a gentle horizon arc so the Sun and Moon are ALWAYS in frame yet never static.
+            const safeViewW = Math.max(900, viewWorldW || 1920);
+            const skyArcY = Math.sin(smoothScrollProgress * Math.PI) * -34 + Math.sin(animTime * 0.45) * 4;
+
+            // Golden Morning Sun (rises in Day Mode, sets behind mountains in Night Mode)
+            if (nightMix < 0.98) {
+                const sunScreenFrac = lerp(0.68, 0.28, smoothScrollProgress);
+                const sunX = camX + safeViewW * sunScreenFrac + Math.cos(animTime * 0.35) * 6;
+                const sunY = lerp(225, 760, nightMix) + skyArcY;
+                const sunAlpha = 1 - nightMix;
+                const sunGlow = ctx.createRadialGradient(sunX, sunY, 12, sunX, sunY, 320);
+                sunGlow.addColorStop(0,   `rgba(255, 251, 235, ${0.95 * sunAlpha})`);
+                sunGlow.addColorStop(0.25,`rgba(253, 224, 71, ${0.55 * sunAlpha})`);
+                sunGlow.addColorStop(0.6, `rgba(251, 146, 60, ${0.22 * sunAlpha})`);
+                sunGlow.addColorStop(1,   'rgba(251, 146, 60, 0)');
+                ctx.fillStyle = sunGlow;
+                ctx.beginPath();
+                ctx.arc(sunX, sunY, 320, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = `rgba(255, 253, 240, ${sunAlpha})`;
+                ctx.beginPath();
+                ctx.arc(sunX, sunY, 46, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Realistic Cratered Moon (always stays in the visible sky frame during Night Mode)
+            if (nightMix > 0.02) {
+                const moonScreenFrac = lerp(0.74, 0.32, smoothScrollProgress);
+                const moonX = camX + safeViewW * moonScreenFrac + Math.sin(animTime * 0.3) * 6;
+                const moonY = lerp(720, 205, nightMix) + skyArcY;
+                const mGlow = ctx.createRadialGradient(moonX, moonY, 10, moonX, moonY, 210);
+                mGlow.addColorStop(0,   `rgba(186, 230, 253, ${0.42 * nightMix})`);
+                mGlow.addColorStop(0.5, `rgba(56, 189, 248, ${0.12 * nightMix})`);
+                mGlow.addColorStop(1,   'rgba(56, 189, 248, 0)');
+                ctx.fillStyle = mGlow;
+                ctx.beginPath();
+                ctx.arc(moonX, moonY, 210, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = `rgba(241, 245, 249, ${nightMix})`;
+                ctx.beginPath();
+                ctx.arc(moonX, moonY, 38, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Subtle Lunar Maria Craters
+                ctx.fillStyle = `rgba(148, 163, 184, ${0.35 * nightMix})`;
+                ctx.beginPath();
+                ctx.arc(moonX - 12, moonY - 8, 9, 0, Math.PI * 2);
+                ctx.arc(moonX + 14, moonY + 10, 7, 0, Math.PI * 2);
+                ctx.arc(moonX + 4, moonY - 15, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Soft Volumetric Cumulus & Stratocumulus Clouds
+            clouds.forEach((c, idx) => {
+                const driftX = (animTime * c.speed) % 6600;
+                const baseCx = ((c.x + driftX) % 6600) - 200 + camX * 0.52;
+                const baseCy = c.y + Math.sin(animTime * 0.35 + idx * 1.4) * 5;
+                if (baseCx + 380 < camX - 250 || baseCx - 380 > camX + 2700) return;
+
+                // Soft atmospheric ambient underside shadow first
+                c.puffs.forEach((p, pIdx) => {
+                    const px = baseCx + p.dx * c.scale + Math.sin(animTime * 0.55 + idx + pIdx) * 6;
+                    const py = baseCy + p.dy * c.scale + Math.cos(animTime * 0.45 + pIdx) * 2.5;
+                    const rx = p.rx * c.scale;
+                    const ry = p.ry * c.scale;
+
+                    ctx.save();
+                    ctx.translate(px, py + ry * 0.18);
+                    ctx.scale(rx, ry * 0.85);
+                    const baseGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+                    baseGrad.addColorStop(0, lerpRGBA([186, 208, 232], [15, 23, 42], nightMix, lerp(0.32, 0.18, nightMix)));
+                    baseGrad.addColorStop(0.65, lerpRGBA([203, 213, 225], [30, 41, 59], nightMix, lerp(0.16, 0.08, nightMix)));
+                    baseGrad.addColorStop(1, 'rgba(148, 163, 184, 0)');
+                    ctx.fillStyle = baseGrad;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 1, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                });
+
+                // Sunlit / Moonlit upper volumetric cloud puffs (unit-circle scaled so gradient reaches 0 before edge)
+                c.puffs.forEach((p, pIdx) => {
+                    const px = baseCx + p.dx * c.scale + Math.sin(animTime * 0.55 + idx + pIdx) * 6;
+                    const py = baseCy + p.dy * c.scale + Math.cos(animTime * 0.45 + pIdx) * 2.5;
+                    const rx = p.rx * c.scale;
+                    const ry = p.ry * c.scale;
+
+                    ctx.save();
+                    ctx.translate(px, py);
+                    ctx.scale(rx, ry);
+                    const puffGrad = ctx.createRadialGradient(-0.12, -0.18, 0.02, 0, 0, 1);
+                    puffGrad.addColorStop(0, lerpRGBA([255, 255, 255], [71, 85, 105], nightMix, lerp(0.78, 0.24, nightMix)));
+                    puffGrad.addColorStop(0.45, lerpRGBA([248, 250, 252], [51, 65, 85], nightMix, lerp(0.46, 0.14, nightMix)));
+                    puffGrad.addColorStop(0.78, lerpRGBA([226, 232, 240], [30, 41, 59], nightMix, lerp(0.18, 0.05, nightMix)));
+                    puffGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                    ctx.fillStyle = puffGrad;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 1, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                });
+            });
+        }
+
+        function drawMountainRange(camX, seed, baseAlt, amp, parallax, dayRGB, nightRGB, snowLine) {
+            ctx.save();
+            ctx.beginPath();
+            const startX = Math.max(0, Math.floor((camX - 200) / 25) * 25);
+            const endX = Math.min(WORLD_WIDTH, startX + 2900);
+
+            ctx.moveTo(startX, WORLD_HEIGHT);
+            for (let x = startX; x <= endX; x += 25) {
+                const sampleX = x - camX * (1 - parallax);
+                const y = getRidgeHeight(sampleX, seed, baseAlt, amp);
+                ctx.lineTo(x, y);
+            }
+            ctx.lineTo(endX, WORLD_HEIGHT);
+            ctx.closePath();
+
+            const mGrad = ctx.createLinearGradient(0, baseAlt - amp, 0, WORLD_HEIGHT);
+            mGrad.addColorStop(0, lerpRGB(dayRGB, nightRGB, nightMix));
+            mGrad.addColorStop(1, lerpRGB([20, 32, 48], [4, 9, 20], nightMix));
+            ctx.fillStyle = mGrad;
+            ctx.fill();
+
+            ctx.strokeStyle = snowLine
+                ? lerpRGBA([255, 255, 255], [148, 163, 184], nightMix, lerp(0.65, 0.28, nightMix))
+                : lerpRGBA([203, 213, 225], [51, 65, 85], nightMix, 0.25);
+            ctx.lineWidth = snowLine ? 2.2 : 1.2;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawValleyMist(camX, yPos, thickness) {
+            // Base atmospheric horizon haze band (denser, more solid body)
+            const mistGrad = ctx.createLinearGradient(0, yPos - thickness * 1.35, 0, yPos + thickness * 1.35);
+            mistGrad.addColorStop(0, 'rgba(148, 163, 184, 0)');
+            mistGrad.addColorStop(0.28, lerpRGBA([241, 245, 249], [36, 66, 104], nightMix, lerp(0.45, 0.28, nightMix)));
+            mistGrad.addColorStop(0.5, lerpRGBA([255, 255, 255], [52, 86, 128], nightMix, lerp(0.68, 0.44, nightMix)));
+            mistGrad.addColorStop(0.72, lerpRGBA([241, 245, 249], [36, 66, 104], nightMix, lerp(0.45, 0.28, nightMix)));
+            mistGrad.addColorStop(1, 'rgba(148, 163, 184, 0)');
+            ctx.fillStyle = mistGrad;
+            ctx.fillRect(camX - 100, yPos - thickness * 1.35, 2800, thickness * 2.7);
+
+            // Drifting volumetric valley vapor banks with a solid core that rolls along the mountain ridges
+            const startPuff = Math.floor((camX - 400) / 220);
+            const endPuff = startPuff + 16;
+            for (let i = startPuff; i <= endPuff; i++) {
+                const drift = Math.sin(animTime * 0.32 + i * 0.9) * 60 + animTime * 18;
+                const px = i * 220 + (drift % 220);
+                const py = yPos + Math.sin(animTime * 0.45 + i * 1.7) * (thickness * 0.26);
+                const rx = 250 + (Math.abs(i * 37) % 95);
+                const ry = thickness * (0.82 + ((Math.abs(i * 19) % 30) / 100));
+
+                ctx.save();
+                ctx.translate(px, py);
+                ctx.scale(rx, ry);
+                const vGrad = ctx.createRadialGradient(0, 0, 0.08, 0, 0, 1);
+                vGrad.addColorStop(0, lerpRGBA([255, 255, 255], [78, 116, 162], nightMix, lerp(0.58, 0.36, nightMix)));
+                vGrad.addColorStop(0.48, lerpRGBA([248, 250, 252], [51, 85, 128], nightMix, lerp(0.42, 0.26, nightMix)));
+                vGrad.addColorStop(0.78, lerpRGBA([241, 245, 249], [30, 58, 95], nightMix, lerp(0.18, 0.10, nightMix)));
+                vGrad.addColorStop(1, 'rgba(148, 163, 184, 0)');
+                ctx.fillStyle = vGrad;
+                ctx.beginPath();
+                ctx.arc(0, 0, 1, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function drawRealisticSpruceTree(tx, groundY, treeH, scale, seed, sway, rowIdx = 2) {
+            const trunkW = Math.max(2, 3.2 * scale);
+            const trunkH = treeH * 0.22;
+
+            // Subtle ambient ground shadow under each tree so the sloped forest has rich depth
+            ctx.fillStyle = `rgba(2, 6, 23, ${0.18 + rowIdx * 0.04})`;
+            ctx.beginPath();
+            ctx.ellipse(tx, groundY, 9 * scale, 2.6 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Timber trunk
+            ctx.fillStyle = lerpRGB([74, 53, 37], [18, 16, 22], nightMix);
+            ctx.fillRect(tx - trunkW * 0.5, groundY - trunkH, trunkW, trunkH + 2);
+
+            // Slight atmospheric depth tint across the 5 rows
+            const depthBoost = (rowIdx - 2) * 3;
+            const shadowFoliage = lerpRGB(
+                [Math.max(12, 19 + depthBoost), Math.max(32, 48 + depthBoost), Math.max(24, 35 + depthBoost)],
+                [Math.max(3, 5 + rowIdx), Math.max(10, 14 + rowIdx * 2), Math.max(18, 24 + rowIdx * 2)],
+                nightMix
+            );
+            const litFoliage = lerpRGB(
+                [Math.max(30, 46 + depthBoost), Math.max(75, 98 + depthBoost), Math.max(50, 66 + depthBoost)],
+                [Math.max(10, 14 + rowIdx * 2), Math.max(28, 36 + rowIdx * 3), Math.max(42, 54 + rowIdx * 3)],
+                nightMix
+            );
+
+            const tiers = 4;
+            for (let layer = 0; layer < tiers; layer++) {
+                const progress = layer / (tiers - 1);
+                const tierBottomY = groundY - trunkH * 0.65 - layer * (treeH * 0.21);
+                const tierTopY = tierBottomY - treeH * (0.34 - progress * 0.04);
+                const halfSpan = (12 + (1 - progress) * 14) * scale;
+                const layerSway = sway * (0.3 + progress * 0.7);
+                const apexX = tx + layerSway;
+
+                // Full bough silhouette (shadowed right side)
+                ctx.fillStyle = shadowFoliage;
+                ctx.beginPath();
+                ctx.moveTo(apexX, tierTopY);
+                ctx.quadraticCurveTo(
+                    tx + halfSpan * 0.55 + layerSway * 0.5,
+                    tierBottomY - 4 * scale,
+                    tx + halfSpan + layerSway * 0.3,
+                    tierBottomY
+                );
+                ctx.lineTo(tx + halfSpan * 0.45, tierBottomY - 2.5 * scale);
+                ctx.lineTo(tx + halfSpan * 0.15, tierBottomY + 2 * scale);
+                ctx.lineTo(tx - halfSpan * 0.2, tierBottomY - 2 * scale);
+                ctx.lineTo(tx - halfSpan * 0.55, tierBottomY + 1.5 * scale);
+                ctx.lineTo(tx - halfSpan + layerSway * 0.3, tierBottomY);
+                ctx.quadraticCurveTo(
+                    tx - halfSpan * 0.55 + layerSway * 0.5,
+                    tierBottomY - 4 * scale,
+                    apexX,
+                    tierTopY
+                );
+                ctx.closePath();
+                ctx.fill();
+
+                // Sunlit / Moonlit left-facing foliage highlight
+                ctx.fillStyle = litFoliage;
+                ctx.beginPath();
+                ctx.moveTo(apexX, tierTopY);
+                ctx.lineTo(tx + halfSpan * 0.1, tierBottomY + 1.5 * scale);
+                ctx.lineTo(tx - halfSpan * 0.2, tierBottomY - 2 * scale);
+                ctx.lineTo(tx - halfSpan * 0.55, tierBottomY + 1.5 * scale);
+                ctx.lineTo(tx - halfSpan + layerSway * 0.3, tierBottomY);
+                ctx.quadraticCurveTo(
+                    tx - halfSpan * 0.55 + layerSway * 0.5,
+                    tierBottomY - 4 * scale,
+                    apexX,
+                    tierTopY
+                );
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+
+        // Renders the towering headwaters mountain massif and a wide, multi-stream alpine waterfall cascading down its cliff face
+        function drawAlpineHeadwatersWaterfall(camX) {
+            const wfX = 275;
+            if (camX > 1450) return;
+
+            const topY = 534;
+            const midLedgeY = 690;
+            const poolY = 868;
+            const riverJoinY = getExactRiverTopY(wfX + 95) + 8;
+
+            const topHalfW = 44;
+            const midHalfW = 60;
+            const poolHalfW = 80;
+
+            // 1. Towering Headwaters Mountain Massif (fills the background behind the waterfall & Towers T1-T2)
+            const massifGrad = ctx.createLinearGradient(wfX, 430, wfX, poolY + 10);
+            massifGrad.addColorStop(0.0, lerpRGB([74, 108, 140], [16, 31, 56], nightMix));
+            massifGrad.addColorStop(0.45, lerpRGB([52, 84, 108], [12, 23, 42], nightMix));
+            massifGrad.addColorStop(1.0, lerpRGB([28, 52, 68],  [6, 13, 24],  nightMix));
+
+            ctx.fillStyle = massifGrad;
+            ctx.beginPath();
+            ctx.moveTo(-80, 868);
+            ctx.lineTo(-80, 620);
+            ctx.quadraticCurveTo(25, 535, 118, 462); // Western Peak
+            ctx.quadraticCurveTo(185, 505, wfX - topHalfW - 10, topY - 4); // Left Canyon Rim
+            ctx.lineTo(wfX, topY + 8); // Glacial Saddle Notch
+            ctx.lineTo(wfX + topHalfW + 10, topY - 6); // Right Canyon Rim
+            ctx.quadraticCurveTo(385, 475, 458, 436); // Main Headwaters Summit
+            ctx.quadraticCurveTo(575, 488, 688, 514); // East Ridge Sub-Peak (behind T1)
+            ctx.quadraticCurveTo(790, 542, 915, 568); // Mid-Corridor Ridge
+            ctx.quadraticCurveTo(1065, 650, 1240, 795); // Slopes into valley floor near T2
+            ctx.lineTo(1240, 885);
+            ctx.closePath();
+            ctx.fill();
+
+            // 2. Dimensional Sunlit & Shadowed Mountain Facets & Arête Ridges
+            // Sunlit Left Face of Western Peak
+            const litFaceGrad = ctx.createLinearGradient(0, 440, 0, poolY);
+            litFaceGrad.addColorStop(0, lerpRGBA([116, 152, 184], [26, 46, 78], nightMix, 0.75));
+            litFaceGrad.addColorStop(1, lerpRGBA([45, 76, 94],    [9, 18, 32],  nightMix, 0.25));
+            ctx.fillStyle = litFaceGrad;
+            ctx.beginPath();
+            ctx.moveTo(-80, 868);
+            ctx.lineTo(-80, 620);
+            ctx.quadraticCurveTo(25, 535, 118, 462);
+            ctx.quadraticCurveTo(148, 645, 165, 868);
+            ctx.closePath();
+            ctx.fill();
+
+            // Sunlit Western Slope of Main Headwaters Summit (flanking right side of waterfall)
+            ctx.beginPath();
+            ctx.moveTo(wfX + topHalfW + 10, topY - 6);
+            ctx.quadraticCurveTo(385, 475, 458, 436);
+            ctx.quadraticCurveTo(492, 635, 535, 868);
+            ctx.lineTo(wfX + poolHalfW + 14, poolY);
+            ctx.closePath();
+            ctx.fill();
+
+            // Sunlit Western Facet of East Ridge Sub-Peak
+            ctx.beginPath();
+            ctx.moveTo(585, 685);
+            ctx.quadraticCurveTo(640, 565, 688, 514);
+            ctx.quadraticCurveTo(725, 675, 755, 875);
+            ctx.lineTo(565, 872);
+            ctx.closePath();
+            ctx.fill();
+
+            // Deep Shadowed Eastern Canyon & Ridge Facets for 3D Relief
+            const shadowFaceGrad = ctx.createLinearGradient(0, 440, 0, poolY);
+            shadowFaceGrad.addColorStop(0, lerpRGBA([32, 56, 76], [7, 14, 28], nightMix, 0.82));
+            shadowFaceGrad.addColorStop(1, lerpRGBA([20, 38, 52], [4, 9, 18],  nightMix, 0.45));
+            ctx.fillStyle = shadowFaceGrad;
+
+            // Shadowed slope from Western Peak into Waterfall Gorge
+            ctx.beginPath();
+            ctx.moveTo(118, 462);
+            ctx.quadraticCurveTo(185, 505, wfX - topHalfW - 10, topY - 4);
+            ctx.lineTo(wfX - poolHalfW - 18, poolY);
+            ctx.lineTo(165, 868);
+            ctx.closePath();
+            ctx.fill();
+
+            // Shadowed eastern slope of Main Summit
+            ctx.beginPath();
+            ctx.moveTo(458, 436);
+            ctx.quadraticCurveTo(575, 488, 688, 514);
+            ctx.quadraticCurveTo(635, 670, 565, 872);
+            ctx.lineTo(515, 868);
+            ctx.closePath();
+            ctx.fill();
+
+            // Snow-capped Alpine Ridge Highlights & Glacial Headwaters Basin
+            ctx.strokeStyle = lerpRGBA([248, 250, 252], [148, 163, 184], nightMix, lerp(0.7, 0.32, nightMix));
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            ctx.moveTo(-40, 595);
+            ctx.quadraticCurveTo(35, 528, 118, 462);
+            ctx.quadraticCurveTo(178, 500, wfX - topHalfW - 8, topY - 4);
+            ctx.moveTo(wfX + topHalfW + 8, topY - 6);
+            ctx.quadraticCurveTo(385, 475, 458, 436);
+            ctx.quadraticCurveTo(575, 488, 688, 514);
+            ctx.quadraticCurveTo(790, 542, 915, 568);
+            ctx.stroke();
+
+            // High-Altitude Glacial Meltwater Basin feeding the waterfall crest (smooth unclipped radial glow)
+            ctx.save();
+            ctx.translate(wfX, topY);
+            ctx.scale(topHalfW + 18, 11);
+            const basinGrad = ctx.createRadialGradient(0, 0, 0.05, 0, 0, 1);
+            basinGrad.addColorStop(0, lerpRGBA([224, 242, 254], [56, 189, 248], nightMix, 0.85));
+            basinGrad.addColorStop(0.55, lerpRGBA([125, 211, 252], [30, 88, 138], nightMix, 0.42));
+            basinGrad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+            ctx.fillStyle = basinGrad;
+            ctx.beginPath();
+            ctx.arc(0, 0, 1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // 3. Recessed Carved Cliff Gorge Behind the Cataract
+            const gorgeGrad = ctx.createLinearGradient(wfX, topY, wfX, poolY);
+            gorgeGrad.addColorStop(0, lerpRGB([24, 42, 58], [5, 11, 22], nightMix));
+            gorgeGrad.addColorStop(1, lerpRGB([16, 30, 42], [3, 8, 16],  nightMix));
+            ctx.fillStyle = gorgeGrad;
+            ctx.beginPath();
+            ctx.moveTo(wfX - topHalfW - 14, topY);
+            ctx.lineTo(wfX + topHalfW + 14, topY);
+            ctx.quadraticCurveTo(wfX + midHalfW + 22, midLedgeY, wfX + poolHalfW + 20, poolY + 4);
+            ctx.lineTo(wfX - poolHalfW - 20, poolY + 4);
+            ctx.quadraticCurveTo(wfX - midHalfW - 22, midLedgeY, wfX - topHalfW - 14, topY);
+            ctx.closePath();
+            ctx.fill();
+
+            // 4. Wide Tributary River Channel connecting the plunge pool seamlessly into the main river
+            const tribGrad = ctx.createLinearGradient(wfX, poolY, wfX + 95, riverJoinY);
+            tribGrad.addColorStop(0, lerpRGBA([125, 211, 252], [30, 88, 138], nightMix, 0.92));
+            tribGrad.addColorStop(0.5, lerpRGBA([56, 152, 198], [14, 52, 88], nightMix, 0.92));
+            tribGrad.addColorStop(1, lerpRGBA([42, 118, 162], [8, 22, 44], nightMix, 0.96));
+            ctx.fillStyle = tribGrad;
+            ctx.beginPath();
+            ctx.moveTo(wfX - poolHalfW + 6, poolY - 2);
+            ctx.quadraticCurveTo(wfX - 32, (poolY + riverJoinY) * 0.54, wfX + 5, riverJoinY);
+            ctx.lineTo(wfX + 175, riverJoinY);
+            ctx.quadraticCurveTo(wfX + 112, (poolY + riverJoinY) * 0.52, wfX + poolHalfW - 6, poolY - 2);
+            ctx.closePath();
+            ctx.fill();
+
+            // Animated current ripples flowing down the tributary channel into the main river
+            ctx.save();
+            ctx.strokeStyle = lerpRGBA([224, 242, 254], [125, 211, 252], nightMix, lerp(0.55, 0.32, nightMix));
+            ctx.lineWidth = 1.6;
+            ctx.setLineDash([16, 24]);
+            ctx.lineDashOffset = -animTime * 48;
+            for (let c = -2; c <= 2; c++) {
+                ctx.beginPath();
+                ctx.moveTo(wfX + c * 22, poolY + 6);
+                ctx.quadraticCurveTo(wfX + 35 + c * 24, (poolY + riverJoinY) * 0.54, wfX + 88 + c * 26, riverJoinY - 4);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // 5. Five independent chutes with different widths, wavering edges, and flow speeds.
+            // Keep the spaces between them visible so the cascade does not read as a flat sheet.
+            for (let chute = 0; chute < 5; chute++) {
+                const lane = chute - 2;
+                const laneWidth = [8.4, 7.2, 9.3, 6.8, 8.1][chute];
+                const laneCenter = (t) => wfX + lane * lerp(18.1, 30.5, t)
+                    + Math.sin(t * (9 + chute * 0.9) + chute * 1.7 + animTime * (0.8 + chute * 0.13)) * (1.6 + t * 2.5)
+                    + Math.sin(t * 23 + chute * 2.3 - animTime * 0.38) * 1.5;
+                const laneHalfWidth = (t) => laneWidth * lerp(0.80, 1.56, t)
+                    * (1 + Math.sin(t * 18 + chute * 2.4 + animTime * 0.6) * 0.09);
+
+                const chuteGrad = ctx.createLinearGradient(wfX, topY, wfX, poolY);
+                chuteGrad.addColorStop(0, lerpRGBA([187, 234, 255], [81, 166, 226], nightMix, 0.82));
+                chuteGrad.addColorStop(0.52, lerpRGBA([240, 250, 255], [114, 203, 242], nightMix, 0.84));
+                chuteGrad.addColorStop(1, lerpRGBA([208, 243, 255], [104, 194, 229], nightMix, 0.9));
+                ctx.fillStyle = chuteGrad;
+                ctx.beginPath();
+                for (let step = 0; step <= 28; step++) {
+                    const t = step / 28;
+                    const y = lerp(topY, poolY, t);
+                    const x = laneCenter(t) - laneHalfWidth(t);
+                    if (step === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                for (let step = 28; step >= 0; step--) {
+                    const t = step / 28;
+                    ctx.lineTo(laneCenter(t) + laneHalfWidth(t), lerp(topY, poolY, t));
+                }
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Overlapping Cliff Wall Crags framing only the outer left and right canyon edges
+            ctx.fillStyle = lerpRGB([38, 66, 84], [10, 19, 34], nightMix);
+            ctx.beginPath();
+            ctx.moveTo(wfX - topHalfW - 28, topY - 4);
+            ctx.lineTo(wfX - topHalfW + 4, topY + 2);
+            ctx.lineTo(wfX - midHalfW + 4, midLedgeY - 12);
+            ctx.lineTo(wfX - midHalfW + 2, midLedgeY + 35);
+            ctx.lineTo(wfX - poolHalfW - 22, poolY + 4);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = lerpRGB([46, 78, 98], [12, 24, 42], nightMix);
+            ctx.beginPath();
+            ctx.moveTo(wfX + topHalfW + 28, topY - 6);
+            ctx.lineTo(wfX + topHalfW - 4, topY + 2);
+            ctx.lineTo(wfX + midHalfW - 4, midLedgeY - 10);
+            ctx.lineTo(wfX + midHalfW - 2, midLedgeY + 35);
+            ctx.lineTo(wfX + poolHalfW + 22, poolY + 4);
+            ctx.closePath();
+            ctx.fill();
+
+            // 6. Uneven falling threads with staggered pulses and varied velocities.
+            ctx.save();
+            for (let thread = 0; thread < 23; thread++) {
+                const lane = (thread % 5) - 2;
+                const spread = ((thread * 7) % 9 - 4) * 1.45;
+                const speed = 72 + (thread % 7) * 14;
+                ctx.strokeStyle = lerpRGBA([255, 255, 255], [219, 245, 255], nightMix, 0.34 + (thread % 4) * 0.11);
+                ctx.lineWidth = 0.8 + (thread % 4) * 0.42;
+                ctx.setLineDash([9 + (thread % 5) * 5, 16 + (thread % 6) * 5]);
+                ctx.lineDashOffset = -animTime * speed - thread * 17;
+                ctx.beginPath();
+                ctx.moveTo(wfX + lane * 18.1 + spread * 0.7, topY + (thread % 4) * 4);
+                ctx.bezierCurveTo(
+                    wfX + lane * 22 + spread + Math.sin(animTime * 0.9 + thread) * 3, midLedgeY - 42,
+                    wfX + lane * 27 + spread * 1.2 - Math.cos(animTime * 0.6 + thread) * 4, midLedgeY + 47,
+                    wfX + lane * 30.5 + spread * 1.4, poolY - 3
+                );
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Soft rising mid-cascade vapor veil (denser, more solid mist body)
+            for (let m = 0; m < 5; m++) {
+                const mPhase = (animTime * 0.35 + m * 0.2) % 1;
+                const mx = wfX + Math.sin(animTime * 0.9 + m * 2.1) * 24;
+                const my = midLedgeY + 12 - mPhase * 34;
+                const mrx = (midHalfW + 22) * (0.88 + mPhase * 0.35);
+                const mry = 20 + mPhase * 15;
+                const mAlpha = Math.sin(mPhase * Math.PI) * lerp(0.72, 0.48, nightMix);
+
+                ctx.save();
+                ctx.translate(mx, my);
+                ctx.scale(mrx, mry);
+                const midVaporGrad = ctx.createRadialGradient(0, 0, 0.1, 0, 0, 1);
+                midVaporGrad.addColorStop(0, lerpRGBA([255, 255, 255], [226, 232, 240], nightMix, mAlpha));
+                midVaporGrad.addColorStop(0.5, lerpRGBA([248, 250, 252], [186, 210, 235], nightMix, mAlpha * 0.82));
+                midVaporGrad.addColorStop(0.8, lerpRGBA([241, 245, 249], [148, 163, 184], nightMix, mAlpha * 0.38));
+                midVaporGrad.addColorStop(1, 'rgba(186, 230, 253, 0)');
+                ctx.fillStyle = midVaporGrad;
+                ctx.beginPath();
+                ctx.arc(0, 0, 1, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // 7. Turbulent Whitewater Foam Cushion at the Plunge Line
+            ctx.save();
+            ctx.translate(wfX, poolY + 2);
+            ctx.scale(poolHalfW + 36, 26);
+            const apronGrad = ctx.createRadialGradient(0, 0, 0.1, 0, 0, 1);
+            apronGrad.addColorStop(0, lerpRGBA([255, 255, 255], [240, 249, 255], nightMix, lerp(0.98, 0.82, nightMix)));
+            apronGrad.addColorStop(0.55, lerpRGBA([240, 249, 255], [186, 230, 253], nightMix, lerp(0.82, 0.58, nightMix)));
+            apronGrad.addColorStop(1, 'rgba(186, 230, 253, 0)');
+            ctx.fillStyle = apronGrad;
+            ctx.beginPath();
+            ctx.arc(0, 0, 1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // 8. Solid, Thick Billowing & Rising Plunge-Pool Fog Bank
+            for (let p = 0; p < 16; p++) {
+                const cycle = (animTime * 0.24 + p * (1 / 16)) % 1;
+                const sideDir = (p % 2 === 0 ? 1 : -1);
+                const spreadFactor = Math.pow(cycle, 0.82);
+                const spreadX = sideDir * (8 + spreadFactor * (poolHalfW + 98)) + Math.sin(animTime * 1.15 + p * 1.3) * 16;
+                const liftY = -Math.sin(cycle * Math.PI) * 40 + Math.cos(animTime * 0.85 + p) * 6;
+                const fogX = wfX + spreadX * 0.88;
+                const fogY = poolY + 6 + liftY;
+                const rx = 58 + cycle * 88;
+                const ry = 25 + Math.sin(cycle * Math.PI) * 22;
+                const alphaEnvelope = Math.sin(cycle * Math.PI) * lerp(0.88, 0.66, nightMix);
+
+                ctx.save();
+                ctx.translate(fogX, fogY);
+                ctx.scale(rx, ry);
+                const puffGrad = ctx.createRadialGradient(0, -0.08, 0.12, 0, 0, 1);
+                puffGrad.addColorStop(0, lerpRGBA([255, 255, 255], [241, 245, 249], nightMix, alphaEnvelope));
+                puffGrad.addColorStop(0.48, lerpRGBA([250, 252, 255], [203, 213, 225], nightMix, alphaEnvelope * 0.86));
+                puffGrad.addColorStop(0.78, lerpRGBA([226, 232, 240], [148, 163, 184], nightMix, alphaEnvelope * 0.45));
+                puffGrad.addColorStop(1, 'rgba(148, 163, 184, 0)');
+                ctx.fillStyle = puffGrad;
+                ctx.beginPath();
+                ctx.arc(0, 0, 1, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Dense Low Ground-Fog Blankets Gliding Across the Plunge Pool & River Mouth
+            for (let b = 0; b < 4; b++) {
+                const bankDrift = Math.sin(animTime * (0.55 + b * 0.16) + b * 1.9) * 38 + (b - 1.5) * 36;
+                const bankY = poolY + 12 + b * 9;
+                const bankRx = 190 + b * 32;
+                const bankRy = 36 + b * 7;
+
+                ctx.save();
+                ctx.translate(wfX + bankDrift, bankY);
+                ctx.scale(bankRx, bankRy);
+                const baseFogGrad = ctx.createRadialGradient(0, 0, 0.12, 0, 0, 1);
+                baseFogGrad.addColorStop(0, lerpRGBA([255, 255, 255], [226, 232, 240], nightMix, lerp(0.85 - b * 0.08, 0.62 - b * 0.06, nightMix)));
+                baseFogGrad.addColorStop(0.55, lerpRGBA([241, 245, 249], [165, 185, 208], nightMix, lerp(0.62 - b * 0.06, 0.42 - b * 0.05, nightMix)));
+                baseFogGrad.addColorStop(0.85, lerpRGBA([226, 232, 240], [100, 116, 139], nightMix, lerp(0.26, 0.16, nightMix)));
+                baseFogGrad.addColorStop(1, 'rgba(148, 163, 184, 0)');
+                ctx.fillStyle = baseFogGrad;
+                ctx.beginPath();
+                ctx.arc(0, 0, 1, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Overlay the tributary after the main river is painted so the water
+        // visibly enters the river instead of disappearing behind its bank.
+        function drawWaterfallRiverConfluence(camX) {
+            if (camX > 1450) return;
+            const startY = 862;
+            const mouthY = getExactRiverTopY(470) + 55;
+            const channel = (t) => ({
+                x: 275 + 195 * Math.pow(t, 1.45) + Math.sin(t * 6.2) * 7,
+                y: lerp(startY, mouthY, t),
+                half: lerp(72, 118, t) + Math.sin(t * 14) * 3.5
+            });
+
+            ctx.save();
+            ctx.beginPath();
+            for (let step = 0; step <= 32; step++) {
+                const t = step / 32;
+                const p = channel(t);
+                if (step === 0) ctx.moveTo(p.x - p.half, p.y);
+                else ctx.lineTo(p.x - p.half, p.y);
+            }
+            for (let step = 32; step >= 0; step--) {
+                const p = channel(step / 32);
+                ctx.lineTo(p.x + p.half, p.y);
+            }
+            ctx.closePath();
+            const water = ctx.createLinearGradient(275, startY, 470, mouthY);
+            water.addColorStop(0, lerpRGB([112, 202, 235], [29, 91, 135], nightMix));
+            water.addColorStop(0.62, lerpRGB([45, 137, 185], [13, 48, 82], nightMix));
+            water.addColorStop(0.78, lerpRGBA([36, 108, 152], [10, 26, 50], nightMix, 0.84));
+            water.addColorStop(1, lerpRGBA([36, 108, 152], [10, 26, 50], nightMix, 0));
+            ctx.fillStyle = water;
+            ctx.fill();
+            ctx.clip();
+
+            // Threads travel from the plunge pool through the opened river mouth.
+            for (let i = 0; i < 22; i++) {
+                const t = (i * 0.173 + animTime * (0.17 + (i % 4) * 0.018)) % 1;
+                const next = Math.min(1, t + 0.06 + (i % 4) * 0.012);
+                const lane = (((i * 7) % 19) - 9) / 11;
+                const a = channel(t);
+                const b = channel(next);
+                ctx.strokeStyle = lerpRGBA([224, 247, 255], [108, 199, 236], nightMix, 0.18 + (i % 4) * 0.075);
+                ctx.lineWidth = 1.2 + (i % 3) * 0.35;
+                ctx.beginPath();
+                ctx.moveTo(a.x + a.half * lane, a.y);
+                ctx.quadraticCurveTo((a.x + b.x) / 2 + a.half * lane + 5, (a.y + b.y) / 2, b.x + b.half * lane, b.y);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Broken foam along the banks and an eddy where the tributary merges.
+            ctx.save();
+            ctx.strokeStyle = lerpRGBA([230, 249, 255], [135, 209, 239], nightMix, 0.52);
+            ctx.lineWidth = 2.1;
+            for (const side of [-1, 1]) {
+                ctx.beginPath();
+                for (let step = 0; step <= 26; step++) {
+                    const t = step / 32;
+                    const p = channel(t);
+                    const x = p.x + side * p.half + Math.sin(t * 21 + animTime * 1.6) * 2;
+                    if (step === 0) ctx.moveTo(x, p.y);
+                    else ctx.lineTo(x, p.y);
+                }
+                ctx.stroke();
+            }
+            const mouth = channel(0.86);
+            ctx.globalAlpha = 0.38;
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.ellipse(mouth.x + i * 17 - 22, mouth.y + i * 3, 20 + i * 5, 4 + i, -0.08, Math.PI * 0.15, Math.PI * 0.75);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        // Visible rotating runner and generator at the waterfall outflow.
+        function drawHydroTurbine(camX) {
+            if (camX > 1450) return;
+            const tx = 370;
+            const ty = 924;
+            ctx.save();
+
+            // Short penstock and the generator housing anchor the wheel to the fall.
+            ctx.strokeStyle = lerpRGB([53, 79, 91], [15, 32, 47], nightMix);
+            ctx.lineWidth = 12;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(331, 874);
+            ctx.quadraticCurveTo(343, 895, tx - 8, ty - 22);
+            ctx.stroke();
+            ctx.fillStyle = lerpRGB([46, 70, 82], [9, 23, 39], nightMix);
+            ctx.beginPath();
+            ctx.roundRect(tx - 43, ty - 38, 87, 76, 14);
+            ctx.fill();
+            ctx.strokeStyle = lerpRGBA([167, 203, 214], [81, 138, 161], nightMix, 0.82);
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // The six broad blades turn continuously as water passes through.
+            ctx.save();
+            ctx.translate(tx, ty);
+            ctx.rotate(animTime * 2.7);
+            for (let blade = 0; blade < 6; blade++) {
+                ctx.rotate(Math.PI / 3);
+                ctx.fillStyle = lerpRGB([101, 205, 230], [33, 142, 184], nightMix);
+                ctx.beginPath();
+                ctx.moveTo(4, -5);
+                ctx.quadraticCurveTo(15, -17, 26, -12);
+                ctx.lineTo(27, 0);
+                ctx.quadraticCurveTo(15, -2, 5, 5);
+                ctx.closePath();
+                ctx.fill();
+            }
+            ctx.restore();
+            ctx.strokeStyle = lerpRGB([190, 236, 248], [85, 194, 226], nightMix);
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(tx, ty, 29, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = lerpRGB([250, 251, 232], [127, 232, 247], nightMix);
+            ctx.beginPath();
+            ctx.arc(tx, ty, 5.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // A pulsing conductor links generation to the first transmission tower.
+            ctx.strokeStyle = lerpRGBA([32, 147, 192], [57, 198, 242], nightMix, 0.78);
+            ctx.lineWidth = 2.6;
+            ctx.beginPath();
+            ctx.moveTo(tx + 42, ty - 27);
+            ctx.bezierCurveTo(443, 874, 485, 842, 520, 843);
+            ctx.stroke();
+            const pulse = (animTime * 0.38) % 1;
+            const px = Math.pow(1 - pulse, 3) * (tx + 42) + 3 * Math.pow(1 - pulse, 2) * pulse * 443
+                + 3 * (1 - pulse) * pulse * pulse * 485 + Math.pow(pulse, 3) * 520;
+            const py = Math.pow(1 - pulse, 3) * (ty - 27) + 3 * Math.pow(1 - pulse, 2) * pulse * 874
+                + 3 * (1 - pulse) * pulse * pulse * 842 + Math.pow(pulse, 3) * 843;
+            ctx.fillStyle = '#72f2ff';
+            ctx.beginPath();
+            ctx.arc(px, py, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.font = '600 13px "JetBrains Mono", monospace';
+            ctx.fillStyle = lerpRGB([3, 60, 91], [177, 238, 252], nightMix);
+            ctx.fillText('HYDRO GENERATOR', tx - 58, ty + 58);
+            ctx.restore();
+        }
+
+        // Renders gabled cabins, village cottages, and suburban houses that appear as we approach the city
+        function drawTransitionalHouses(camX) {
+            const corridorProgress = Math.min(1, smoothScrollProgress / 0.74);
+            const currentWorldX = 520 + corridorProgress * (substationPort.x - 520);
+
+            valleyHouses.forEach((h, idx) => {
+                if (h.x + h.w < camX - 150 || h.x > camX + 2650) return;
+
+                const groundY = getValleyGroundY(h.x + h.w * 0.5) + h.yOff;
+                const wallTopY = groundY - h.h;
+                const roofPeakY = wallTopY - h.roofH;
+                const centerX = h.x + h.w * 0.5;
+
+                const houseEnergy = Math.min(1, Math.max(0, (currentWorldX - h.x) / 220));
+
+                // 1. Subtle Ground Foundation Shadow
+                ctx.fillStyle = 'rgba(2, 6, 23, 0.38)';
+                ctx.fillRect(h.x - 4, groundY - 3, h.w + 8, 6);
+
+                // 2. Chimney (with gentle rising smoke)
+                if (h.chimney) {
+                    const chimX = h.x + h.w * 0.72;
+                    const chimTopY = roofPeakY - 6;
+                    ctx.fillStyle = lerpRGB([120, 82, 68], [45, 38, 46], nightMix);
+                    ctx.fillRect(chimX, chimTopY, 7, wallTopY - chimTopY + 4);
+
+                    for (let p = 0; p < 3; p++) {
+                        const smokeCycle = (animTime * 0.55 + p * 0.33 + idx * 0.2) % 1;
+                        const sx = chimX + 3.5 + smokeCycle * 18 + Math.sin(animTime * 2 + p) * 3;
+                        const sy = chimTopY - 4 - smokeCycle * 28;
+                        const sr = 4 + smokeCycle * 8;
+                        ctx.fillStyle = lerpRGBA([226, 232, 240], [148, 163, 184], nightMix, (1 - smokeCycle) * 0.24);
+                        ctx.beginPath();
+                        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+
+                // 3. House Walls
+                let dayWall = [138, 96, 66];
+                let nightWall = [26, 24, 34];
+                if (h.style === 'cottage') {
+                    dayWall = [214, 202, 184];
+                    nightWall = [32, 38, 54];
+                } else if (h.style === 'suburban') {
+                    dayWall = [203, 213, 225];
+                    nightWall = [28, 37, 54];
+                }
+                ctx.fillStyle = lerpRGB(dayWall, nightWall, nightMix);
+                ctx.fillRect(h.x, wallTopY, h.w, h.h);
+
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.22)';
+                ctx.fillRect(centerX + h.w * 0.12, wallTopY, h.w * 0.38, h.h);
+
+                // 4. Pitched Gabled Roof
+                const dayRoof = h.style === 'cabin' ? [78, 54, 42] : [71, 85, 105];
+                const nightRoof = h.style === 'cabin' ? [18, 16, 24] : [15, 23, 42];
+                ctx.fillStyle = lerpRGB(dayRoof, nightRoof, nightMix);
+                ctx.beginPath();
+                ctx.moveTo(h.x - 5, wallTopY + 2);
+                ctx.lineTo(centerX, roofPeakY);
+                ctx.lineTo(h.x + h.w + 5, wallTopY + 2);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = lerpRGBA([226, 232, 240], [100, 116, 139], nightMix, 0.35);
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.moveTo(h.x - 5, wallTopY + 2);
+                ctx.lineTo(centerX, roofPeakY);
+                ctx.stroke();
+
+                // 5. Warm Cozy Windows that ignite as the scroll current flows past
+                const padX = 6;
+                const padY = 6;
+                const cellW = (h.w - padX * 2) / h.windows;
+                const cellH = (h.h - padY * 2) / h.floors;
+
+                for (let f = 0; f < h.floors; f++) {
+                    for (let w = 0; w < h.windows; w++) {
+                        if (f === h.floors - 1 && w === 0 && h.windows >= 3) {
+                            const doorX = h.x + padX + 2;
+                            const doorY = groundY - cellH * 0.85;
+                            ctx.fillStyle = lerpRGB([68, 44, 32], [15, 20, 32], nightMix);
+                            ctx.fillRect(doorX, doorY, Math.max(5, cellW - 5), cellH * 0.85);
+                            continue;
+                        }
+
+                        const wx = h.x + padX + w * cellW + 2;
+                        const wy = wallTopY + padY + f * cellH + 1.5;
+                        const ww = Math.max(4, cellW - 5);
+                        const wh = Math.max(4, cellH - 4);
+
+                        if (houseEnergy > 0.05) {
+                            ctx.fillStyle = `rgba(253, 224, 71, ${0.92 * houseEnergy})`;
+                            ctx.fillRect(wx, wy, ww, wh);
+                        } else {
+                            ctx.fillStyle = lerpRGBA([71, 85, 105], [30, 41, 59], nightMix, 0.65);
+                            ctx.fillRect(wx, wy, ww, wh);
+                        }
+                    }
+                }
+
+                // 6. Soft Warm Window Halo & River Reflection when lit
+                if (houseEnergy > 0.15) {
+                    const hGlow = ctx.createRadialGradient(centerX, wallTopY + h.h * 0.5, 4, centerX, wallTopY + h.h * 0.5, h.w * 0.95);
+                    hGlow.addColorStop(0, `rgba(251, 191, 36, ${0.26 * houseEnergy * Math.max(0.35, nightMix)})`);
+                    hGlow.addColorStop(1, 'rgba(251, 191, 36, 0)');
+                    ctx.fillStyle = hGlow;
+                    ctx.beginPath();
+                    ctx.arc(centerX, wallTopY + h.h * 0.5, h.w * 0.95, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    const rGrad = ctx.createLinearGradient(0, 1035, 0, 1125);
+                    rGrad.addColorStop(0, `rgba(251, 191, 36, ${0.18 * houseEnergy * nightMix})`);
+                    rGrad.addColorStop(1, 'rgba(251, 191, 36, 0)');
+                    ctx.fillStyle = rGrad;
+                    ctx.fillRect(h.x + 4, 1035, h.w - 8, 85);
+                }
+            });
+        }
+
+        function drawValleyAndRiver(camX) {
+            const spanStartX = Math.max(0, Math.floor((camX - 220) / 12) * 12);
+            const spanEndX = Math.min(WORLD_WIDTH, spanStartX + 3000);
+
+            // 1. Uneven Rolling Alpine Foothill Meadow & Sloped Riverbank (sampled along getValleyGroundY)
+            ctx.beginPath();
+            ctx.moveTo(spanStartX, getValleyGroundY(spanStartX) - 14);
+            for (let x = spanStartX; x <= spanEndX; x += 14) {
+                ctx.lineTo(x, getValleyGroundY(x) - 14);
+            }
+            ctx.lineTo(spanEndX, 1200);
+            ctx.lineTo(spanStartX, 1200);
+            ctx.closePath();
+
+            const valleyGrad = ctx.createLinearGradient(0, 825, 0, 1065);
+            valleyGrad.addColorStop(0,   lerpRGB([52, 108, 74], [12, 28, 40], nightMix));
+            valleyGrad.addColorStop(0.55,lerpRGB([36, 82, 56],  [8, 20, 32],  nightMix));
+            valleyGrad.addColorStop(1,   lerpRGB([22, 54, 38],  [5, 13, 23],  nightMix));
+            ctx.fillStyle = valleyGrad;
+            ctx.fill();
+
+            // Subtle uneven terrain contour strata lines across the slope so the land feels natural and rugged
+            ctx.save();
+            ctx.strokeStyle = lerpRGBA([30, 68, 46], [6, 15, 25], nightMix, 0.42);
+            ctx.lineWidth = 1.6;
+            [0.32, 0.66].forEach((tierFrac, tIdx) => {
+                ctx.beginPath();
+                for (let x = spanStartX; x <= Math.min(5420, spanEndX); x += 18) {
+                    const topY = getValleyGroundY(x);
+                    const botY = getExactRiverTopY(x);
+                    const ridgeWave = Math.sin(x * 0.027 + tIdx * 2.1) * 4.5 + Math.cos(x * 0.061) * 2.2;
+                    const cy = lerp(topY, botY, tierFrac) + ridgeWave;
+                    if (x === spanStartX) ctx.moveTo(x, cy);
+                    else ctx.lineTo(x, cy);
+                }
+                ctx.stroke();
+            });
+            ctx.restore();
+
+            // Lush Undulating Backcountry Hillock at the start (x = 0 to 2750) with uneven organic crest
+            if (camX < 2800) {
+                ctx.beginPath();
+                ctx.moveTo(0, 804);
+                for (let x = 0; x <= 2760; x += 16) {
+                    const hillT = x / 2760;
+                    const hillBase = 800 + hillT * 96 - Math.sin(hillT * Math.PI) * 18;
+                    const hillBump = Math.sin(x * 0.0065) * 11 + Math.cos(x * 0.019 + 0.8) * 6.5 + Math.sin(x * 0.048) * 3;
+                    ctx.lineTo(x, hillBase + hillBump);
+                }
+                ctx.lineTo(2760, 1060);
+                ctx.lineTo(0, 1060);
+                ctx.closePath();
+                const natureHillGrad = ctx.createLinearGradient(0, 785, 0, 1050);
+                natureHillGrad.addColorStop(0, lerpRGB([56, 114, 78], [13, 30, 42], nightMix));
+                natureHillGrad.addColorStop(1, lerpRGB([28, 66, 46],  [7, 17, 28],  nightMix));
+                ctx.fillStyle = natureHillGrad;
+                ctx.fill();
+            }
+
+            // Alpine Waterfall at the untouched nature start (x = 275)
+            drawAlpineHeadwatersWaterfall(camX);
+
+            // Render Back & Mid-Slope Forest Tiers (rows 0, 1, 2)
+            for (let i = 0; i < forestTrees.length; i++) {
+                const tr = forestTrees[i];
+                if (tr.rowIdx > 2) continue;
+                if (tr.x < camX - 120 || tr.x > camX + 2650) continue;
+                const sway = Math.sin(animTime * 1.55 + tr.x * 0.025 + tr.rowIdx) * (1.5 + tr.rowIdx * 0.25);
+                drawRealisticSpruceTree(tr.x, tr.groundY, tr.treeH, tr.scale, tr.seed, sway, tr.rowIdx);
+            }
+
+            // Mossy Granite Boulders nestled along the forested riverbank
+            wildernessBoulders.forEach(b => {
+                if (b.x < camX - 100 || b.x > camX + 2600) return;
+                const by = getValleyGroundY(b.x) + b.yOff;
+                ctx.fillStyle = lerpRGB([100, 116, 139], [30, 41, 59], nightMix);
+                ctx.beginPath();
+                ctx.ellipse(b.x, by, b.r, b.r * b.aspect, 0, Math.PI, 0);
+                ctx.fill();
+
+                ctx.fillStyle = lerpRGB([148, 163, 184], [51, 65, 85], nightMix);
+                ctx.beginPath();
+                ctx.ellipse(b.x - b.r * 0.18, by - b.r * 0.12, b.r * 0.7, b.r * b.aspect * 0.65, -0.15, Math.PI, 0);
+                ctx.fill();
+
+                if (b.moss) {
+                    ctx.fillStyle = lerpRGB([62, 124, 78], [16, 45, 38], nightMix);
+                    ctx.beginPath();
+                    ctx.ellipse(b.x - b.r * 0.1, by - b.r * b.aspect * 0.75, b.r * 0.55, 3.2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+
+            // Transitional Cabins, Village Cottages, and Suburban Homes (x = 2880 to 5345)
+            drawTransitionalHouses(camX);
+
+            // Render Lower-Slope & Riverbank Shoreline Forest Tiers (rows 3 & 4) on dry land BEFORE the river water
+            for (let i = 0; i < forestTrees.length; i++) {
+                const tr = forestTrees[i];
+                if (tr.rowIdx <= 2) continue;
+                if (tr.x < camX - 120 || tr.x > camX + 2650) continue;
+                const sway = Math.sin(animTime * 1.7 + tr.x * 0.025 + tr.rowIdx) * 2.2;
+                drawRealisticSpruceTree(tr.x, tr.groundY, tr.treeH, tr.scale, tr.seed, sway, tr.rowIdx);
+            }
+
+            // 2. Uneven Earthen & Shingle Riverbank Shelf (exposed soil, gravel bars, and bank lip above water)
+            const bankEndX = Math.min(5480, spanEndX);
+            if (spanStartX < bankEndX) {
+                // Exposed earthen bank wall & pebble beach band
+                ctx.beginPath();
+                for (let x = spanStartX; x <= bankEndX; x += 10) {
+                    const shoreY = getExactRiverTopY(x);
+                    const bankLipOffset = 6.5 + Math.sin(x * 0.037) * 3.2 + Math.cos(x * 0.083) * 1.8;
+                    if (x === spanStartX) ctx.moveTo(x, shoreY - bankLipOffset);
+                    else ctx.lineTo(x, shoreY - bankLipOffset);
+                }
+                for (let x = bankEndX; x >= spanStartX; x -= 10) {
+                    ctx.lineTo(x, getExactRiverTopY(x) + 5);
+                }
+                ctx.closePath();
+                ctx.fillStyle = lerpRGB([96, 82, 66], [22, 26, 36], nightMix);
+                ctx.fill();
+
+                // Overhanging grassy turf edge along the top of the riverbank
+                ctx.beginPath();
+                for (let x = spanStartX; x <= bankEndX; x += 10) {
+                    const shoreY = getExactRiverTopY(x);
+                    const turfY = shoreY - (6.5 + Math.sin(x * 0.037) * 3.2 + Math.cos(x * 0.083) * 1.8);
+                    if (x === spanStartX) ctx.moveTo(x, turfY);
+                    else ctx.lineTo(x, turfY);
+                }
+                ctx.strokeStyle = lerpRGB([38, 86, 56], [10, 24, 34], nightMix);
+                ctx.lineWidth = 2.6;
+                ctx.stroke();
+            }
+
+            // 3. Winding, Uneven River & Coastal Bay Harbor beneath the City
+            ctx.beginPath();
+            ctx.moveTo(spanStartX, getExactRiverTopY(spanStartX));
+            for (let x = spanStartX; x <= spanEndX; x += 10) {
+                ctx.lineTo(x, getExactRiverTopY(x));
+            }
+            ctx.lineTo(spanEndX, 1200);
+            ctx.lineTo(spanStartX, 1200);
+            ctx.closePath();
+
+            const waterGrad = ctx.createLinearGradient(0, 1005, 0, 1200);
+            waterGrad.addColorStop(0, lerpRGB([36, 108, 152], [10, 26, 50], nightMix));
+            waterGrad.addColorStop(0.35, lerpRGB([42, 118, 162], [8, 22, 44], nightMix));
+            waterGrad.addColorStop(1, lerpRGB([18, 68, 108],  [3, 10, 24],  nightMix));
+            ctx.fillStyle = waterGrad;
+            ctx.fill();
+
+            drawWaterfallRiverConfluence(camX);
+
+            // Shallow water shoreline shimmer & irregular lapping foam along the uneven bank
+            if (spanStartX < bankEndX) {
+                ctx.save();
+                ctx.beginPath();
+                for (let x = spanStartX; x <= bankEndX; x += 10) {
+                    const wy = getExactRiverTopY(x) + 1.8 + Math.sin(x * 0.045 - animTime * 1.8) * 1.2;
+                    if (x === spanStartX) ctx.moveTo(x, wy);
+                    else ctx.lineTo(x, wy);
+                }
+                ctx.strokeStyle = lerpRGBA([186, 230, 253], [125, 211, 252], nightMix, lerp(0.45, 0.26, nightMix));
+                ctx.lineWidth = 1.8;
+                ctx.stroke();
+
+                // Scattered shoreline rocks & gravel bars poking out at the water's edge
+                for (let rx = Math.floor(spanStartX / 85) * 85; rx < bankEndX; rx += 85) {
+                    if (rx > 160 && rx < 480) continue; // keep waterfall mouth clear
+                    const seed = (rx * 17) % 10;
+                    if (seed < 3) continue;
+                    const rockX = rx + (seed - 5) * 6;
+                    const rockY = getExactRiverTopY(rockX) - 1;
+                    const rw = 6 + (seed % 4) * 2.5;
+                    const rh = 3.2 + (seed % 3) * 1.2;
+
+                    ctx.fillStyle = lerpRGB([110, 122, 136], [30, 41, 59], nightMix);
+                    ctx.beginPath();
+                    ctx.ellipse(rockX, rockY, rw, rh, 0, Math.PI, 0);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            // Subtle, gentle downstream water flow animation in the river that follows the uneven shoreline contour
+            ctx.save();
+            const flowStartX = Math.max(0, Math.floor((camX - 200) / 140) * 140);
+            const flowEndX = Math.min(WORLD_WIDTH, flowStartX + 2900);
+
+            for (let band = 0; band < 5; band++) {
+                const bandDepth = 18 + band * 26;
+                const flowSpeed = (22 + band * 5) * animTime;
+                const streakLen = 58 + band * 14;
+                const gapLen = 110 + band * 18;
+
+                ctx.beginPath();
+                for (let x = flowStartX; x <= flowEndX; x += 28) {
+                    const shoreInfluence = Math.max(0, 1 - band * 0.22);
+                    const baseShoreY = getExactRiverTopY(x);
+                    const waveY = lerp(1030, baseShoreY, shoreInfluence) + bandDepth + Math.sin(x * 0.015 - animTime * 1.6 + band) * 1.8;
+                    if (x === flowStartX) ctx.moveTo(x, waveY);
+                    else ctx.lineTo(x, waveY);
+                }
+                ctx.setLineDash([streakLen, gapLen]);
+                ctx.lineDashOffset = -flowSpeed;
+                ctx.strokeStyle = lerpRGBA(
+                    [186, 230, 253],
+                    [56, 189, 248],
+                    nightMix,
+                    lerp(0.22 - band * 0.025, 0.14 - band * 0.018, nightMix)
+                );
+                ctx.lineWidth = 1.3 + (band % 2) * 0.5;
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            drawHydroTurbine(camX);
+
+            // Autonomous river boat cruising continuously in the middle valley corridor (irrespective of scroll)
+            drawMiddleRiverBoat(camX);
+        }
+
+        // Moves continuously on its own patrol loop in the middle section (x = 1650..4250), independent of scroll
+        function drawMiddleRiverBoat(camX) {
+            const minX = 1650;
+            const maxX = 4250;
+            const span = maxX - minX;
+            const speed = 58; // pixels per second
+            const rawDist = (animTime * speed) % (span * 2);
+            const goingEast = rawDist <= span;
+            const boatX = goingEast ? (minX + rawDist) : (maxX - (rawDist - span));
+            const dir = goingEast ? 1 : -1;
+
+            if (boatX < camX - 280 || boatX > camX + 2850) return;
+
+            const shoreY = getExactRiverTopY(boatX);
+            const bob = Math.sin(animTime * 2.9) * 2.4;
+            const pitch = Math.cos(animTime * 2.2) * 0.024;
+            const boatY = shoreY + 68 + bob;
+            const boatScale = 1.95; // Larger, prominent river vessel
+
+            ctx.save();
+            ctx.translate(boatX, boatY);
+            ctx.scale(dir * boatScale, boatScale);
+            ctx.rotate(pitch);
+
+            // 1. Extended Trailing V-Wake & Stern Whitewater Foam
+            ctx.save();
+            ctx.strokeStyle = lerpRGBA([224, 242, 254], [125, 211, 252], nightMix, lerp(0.65, 0.45, nightMix));
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([8, 7]);
+            ctx.lineDashOffset = -animTime * 36;
+            ctx.beginPath();
+            ctx.moveTo(-26, 2);
+            ctx.quadraticCurveTo(-62, -8, -110, -15);
+            ctx.moveTo(-26, 4);
+            ctx.quadraticCurveTo(-62, 12, -110, 18);
+            ctx.stroke();
+
+            // Center prop wash foam streak
+            ctx.strokeStyle = lerpRGBA([255, 255, 255], [186, 230, 253], nightMix, lerp(0.55, 0.35, nightMix));
+            ctx.lineWidth = 2.0;
+            ctx.beginPath();
+            ctx.moveTo(-25, 2.5);
+            ctx.lineTo(-74, 3);
+            ctx.stroke();
+            ctx.restore();
+
+            // 2. Warm Water Reflection Beneath the Hull & Cabin Windows
+            if (nightMix > 0.08) {
+                const reflGrad = ctx.createRadialGradient(2, 13, 2, 0, 15, 42);
+                reflGrad.addColorStop(0, `rgba(253, 224, 71, ${0.46 * nightMix})`);
+                reflGrad.addColorStop(0.55, `rgba(251, 191, 36, ${0.18 * nightMix})`);
+                reflGrad.addColorStop(1, 'rgba(251, 191, 36, 0)');
+                ctx.fillStyle = reflGrad;
+                ctx.beginPath();
+                ctx.ellipse(0, 13, 42, 10, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 3. Lower Hull Shadow on Waterline
+            ctx.fillStyle = 'rgba(2, 6, 23, 0.42)';
+            ctx.beginPath();
+            ctx.ellipse(0, 5.5, 27, 3.2, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 4. Steel River Patrol / Survey Launch Hull
+            ctx.fillStyle = lerpRGB([38, 58, 78], [15, 25, 42], nightMix);
+            ctx.beginPath();
+            ctx.moveTo(-27, -5);
+            ctx.lineTo(12, -5.5);
+            ctx.lineTo(31, -8.5); // Raised clipper bow
+            ctx.quadraticCurveTo(25, 3.5, 16, 5.5);
+            ctx.lineTo(-22, 5.5);
+            ctx.quadraticCurveTo(-26, 2.5, -27, -5);
+            ctx.closePath();
+            ctx.fill();
+
+            // Amber/Crimson Plimsoll Waterline Stripe
+            ctx.strokeStyle = lerpRGB([234, 88, 12], [245, 158, 11], nightMix);
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(-24, 1.2);
+            ctx.lineTo(24, 0.6);
+            ctx.stroke();
+
+            // Hull Portholes
+            ctx.fillStyle = lerpRGB([186, 230, 253], [253, 224, 71], nightMix);
+            [-16, -9, -2].forEach(px => {
+                ctx.beginPath();
+                ctx.arc(px, -2, 1.3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // 5. Main Deckhouse & Forward Wheelhouse Cabin
+            ctx.fillStyle = lerpRGB([241, 245, 249], [51, 65, 85], nightMix);
+            ctx.beginPath();
+            ctx.moveTo(-16, -5.2);
+            ctx.lineTo(-14, -15.5);
+            ctx.lineTo(12, -15.5);
+            ctx.lineTo(16, -5.2);
+            ctx.closePath();
+            ctx.fill();
+
+            // Cabin Roof Overhang
+            ctx.fillStyle = lerpRGB([71, 85, 105], [30, 41, 59], nightMix);
+            ctx.fillRect(-16, -17.5, 30, 2.3);
+
+            // Illuminated Wheelhouse Windows
+            ctx.fillStyle = lerpRGB([56, 189, 248], [254, 240, 138], nightMix);
+            ctx.fillRect(-11, -13.5, 6.5, 5);
+            ctx.fillRect(-2.5, -13.5, 6.5, 5);
+            ctx.beginPath();
+            ctx.moveTo(6, -13.5);
+            ctx.lineTo(11.5, -13.5);
+            ctx.lineTo(13.5, -8.5);
+            ctx.lineTo(6, -8.5);
+            ctx.closePath();
+            ctx.fill();
+
+            // Orange Lifebuoy Ring Mounted on Cabin Side
+            ctx.strokeStyle = '#f97316';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(-11, -6.5, 2.4, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Bow Safety Railing
+            ctx.strokeStyle = lerpRGBA([148, 163, 184], [100, 116, 139], nightMix, 0.8);
+            ctx.lineWidth = 0.9;
+            ctx.beginPath();
+            ctx.moveTo(15, -5.5);
+            ctx.lineTo(16, -9.5);
+            ctx.lineTo(28, -11);
+            ctx.lineTo(29, -8);
+            ctx.stroke();
+
+            // 6. Navigation Mast, Radar Dome & Warm Beacon Lantern
+            ctx.strokeStyle = lerpRGB([100, 116, 139], [148, 163, 184], nightMix);
+            ctx.lineWidth = 1.3;
+            ctx.beginPath();
+            ctx.moveTo(3, -17.5);
+            ctx.lineTo(3, -26.5);
+            ctx.stroke();
+
+            // Small white radar bar
+            ctx.fillStyle = '#e2e8f0';
+            ctx.fillRect(0, -22.5, 6, 1.8);
+
+            // Masthead Lantern Glow
+            const lanternGlow = ctx.createRadialGradient(3, -26.5, 0.5, 3, -26.5, 12);
+            lanternGlow.addColorStop(0, `rgba(255, 251, 235, ${lerp(0.65, 0.98, nightMix)})`);
+            lanternGlow.addColorStop(0.45, `rgba(251, 191, 36, ${lerp(0.3, 0.72, nightMix)})`);
+            lanternGlow.addColorStop(1, 'rgba(251, 191, 36, 0)');
+            ctx.fillStyle = lanternGlow;
+            ctx.beginPath();
+            ctx.arc(3, -26.5, 12, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawMorningBirds(camX) {
+            if (nightMix > 0.65) return;
+            const birdAlpha = (1 - nightMix / 0.65) * 0.85;
+            ctx.save();
+            ctx.strokeStyle = `rgba(30, 41, 59, ${birdAlpha})`;
+            ctx.lineWidth = 1.8;
+
+            birdFlocks.forEach((flock, fIdx) => {
+                const flockX = (flock.baseX + animTime * flock.speed) % 5200;
+                for (let b = 0; b < flock.count; b++) {
+                    const bx = flockX + b * 22 + (b % 2) * 8;
+                    const by = flock.baseY + Math.abs(b - 3) * 11 + Math.sin(animTime * 2.5 + b) * 4;
+                    if (bx < camX - 100 || bx > camX + 2600) continue;
+                    const wingFlap = Math.sin(animTime * 7.5 + b * 0.9 + fIdx) * 5.5;
+
+                    ctx.beginPath();
+                    ctx.moveTo(bx - 8, by - wingFlap);
+                    ctx.quadraticCurveTo(bx - 3, by - 4, bx, by);
+                    ctx.quadraticCurveTo(bx + 3, by - 4, bx + 8, by - wingFlap);
+                    ctx.stroke();
+                }
+            });
+            ctx.restore();
+        }
+
+        function getTowerWirePoint(index, isLowerCircuit, sideOffset = 0) {
+            if (index >= towers.length) {
+                return {
+                    x: substationPort.x + sideOffset * 0.35,
+                    y: isLowerCircuit ? substationPort.y + 32 : substationPort.y
+                };
+            }
+            const t = towers[index];
+            const armRatio = isLowerCircuit ? 0.63 : 0.83;
+            const armY = t.baseY - t.h * armRatio;
+            const insulatorSway = Math.sin(animTime * 1.8 + index * 0.9) * 1.6;
+            return {
+                x: t.x + sideOffset + insulatorSway,
+                y: armY + 18
+            };
+        }
+
+        function drawLatticeTowers(camX) {
+            const totalSpans = towers.length;
+            const corridorProgress = Math.min(1, smoothScrollProgress / 0.74);
+            const activeTowerFloat = corridorProgress * totalSpans;
+
+            towers.forEach((t, idx) => {
+                if (t.x < camX - 280 || t.x > camX + 2750) return;
+
+                const topY = t.baseY - t.h;
+                const waistY = t.baseY - t.h * 0.56;
+                const cageTopY = t.baseY - t.h * 0.88;
+
+                const baseHalfW = 28;
+                const waistHalfW = 11.5;
+                const cageHalfW = 14;
+                const depth3D = 9;
+
+                const towerEnergy = Math.max(0, Math.min(1, 1 - Math.abs(activeTowerFloat - idx) * 0.85));
+                const isTowerPassed = activeTowerFloat >= idx;
+                const isFaultTower = isFaultActive && !isRerouted && (idx === 2 || idx === 3);
+
+                const getHalfWidthAt = (f) => {
+                    if (f < 0.56) {
+                        return lerp(baseHalfW, waistHalfW, f / 0.56);
+                    } else if (f < 0.88) {
+                        return lerp(waistHalfW, cageHalfW, (f - 0.56) / 0.32);
+                    } else {
+                        return lerp(cageHalfW, 2.0, (f - 0.88) / 0.12);
+                    }
+                };
+
+                // 1. Concrete Pier Foundations
+                ctx.fillStyle = lerpRGB([100, 116, 139], [51, 65, 85], nightMix);
+                ctx.fillRect(t.x - baseHalfW - 6, t.baseY - 7, 13, 14);
+                ctx.fillRect(t.x + baseHalfW - 7, t.baseY - 7, 13, 14);
+                ctx.fillStyle = lerpRGB([71, 85, 105], [30, 41, 59], nightMix);
+                ctx.fillRect(t.x + baseHalfW + depth3D - 5, t.baseY - 10, 10, 12);
+
+                // 2. 3D Side-Face Lattice Struts
+                ctx.strokeStyle = lerpRGB([30, 41, 59], [51, 65, 85], nightMix);
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(t.x + baseHalfW, t.baseY);
+                ctx.lineTo(t.x + waistHalfW, waistY);
+                ctx.lineTo(t.x + cageHalfW, cageTopY);
+                ctx.lineTo(t.x, topY);
+                ctx.moveTo(t.x + baseHalfW + depth3D, t.baseY - 4);
+                ctx.lineTo(t.x + waistHalfW + depth3D * 0.65, waistY - 3);
+                ctx.lineTo(t.x + cageHalfW + depth3D * 0.55, cageTopY - 2);
+                ctx.lineTo(t.x, topY);
+                ctx.stroke();
+
+                // 3. Main Front Waisted Steel Chords
+                const baseSteelRGB = lerpRGB([51, 65, 85], [115, 134, 158], nightMix);
+                const energizedSteelColor = isFaultTower
+                    ? '#f87171'
+                    : (towerEnergy > 0.15 ? lerpRGB([2, 132, 199], [125, 211, 252], towerEnergy) : baseSteelRGB);
+
+                ctx.strokeStyle = energizedSteelColor;
+                ctx.lineWidth = 2.6;
+                ctx.beginPath();
+                ctx.moveTo(t.x - baseHalfW, t.baseY);
+                ctx.lineTo(t.x - waistHalfW, waistY);
+                ctx.lineTo(t.x - cageHalfW, cageTopY);
+                ctx.lineTo(t.x, topY);
+                ctx.moveTo(t.x + baseHalfW, t.baseY);
+                ctx.lineTo(t.x + waistHalfW, waistY);
+                ctx.lineTo(t.x + cageHalfW, cageTopY);
+                ctx.lineTo(t.x, topY);
+                ctx.stroke();
+
+                // 4. Multi-Bay K-Bracing & Warren Truss Diagonals
+                ctx.lineWidth = 1.15;
+                const bays = 9;
+                for (let i = 0; i < bays; i++) {
+                    const f1 = i / bays;
+                    const f2 = (i + 1) / bays;
+                    const y1 = lerp(t.baseY, topY, f1);
+                    const y2 = lerp(t.baseY, topY, f2);
+                    const w1 = getHalfWidthAt(f1);
+                    const w2 = getHalfWidthAt(f2);
+
+                    ctx.beginPath();
+                    ctx.moveTo(t.x - w1, y1);
+                    ctx.lineTo(t.x + w2, y2);
+                    ctx.moveTo(t.x + w1, y1);
+                    ctx.lineTo(t.x - w2, y2);
+                    ctx.moveTo(t.x - w2, y2);
+                    ctx.lineTo(t.x + w2, y2);
+                    if (i < bays - 1) {
+                        const d2 = depth3D * (1 - f2 * 0.55);
+                        ctx.moveTo(t.x + w1, y1);
+                        ctx.lineTo(t.x + w2 + d2, y2 - 2);
+                    }
+                    ctx.stroke();
+                }
+
+                // 5. Double-Circuit Cantilever Cross-Arms + Multi-Disc Porcelain Insulators
+                [
+                    { ratio: 0.83, span: 42, isLower: false },
+                    { ratio: 0.63, span: 52, isLower: true }
+                ].forEach(arm => {
+                    const armY = t.baseY - t.h * arm.ratio;
+                    const cageW = getHalfWidthAt(arm.ratio);
+
+                    ctx.strokeStyle = energizedSteelColor;
+                    ctx.lineWidth = 2.1;
+                    ctx.beginPath();
+                    ctx.moveTo(t.x - arm.span, armY);
+                    ctx.lineTo(t.x + arm.span, armY);
+                    ctx.moveTo(t.x - arm.span, armY);
+                    ctx.lineTo(t.x - cageW, armY - 13);
+                    ctx.moveTo(t.x + arm.span, armY);
+                    ctx.lineTo(t.x + cageW, armY - 13);
+                    ctx.moveTo(t.x - arm.span * 0.5, armY);
+                    ctx.lineTo(t.x - cageW, armY - 13);
+                    ctx.moveTo(t.x + arm.span * 0.5, armY);
+                    ctx.lineTo(t.x + cageW, armY - 13);
+                    ctx.stroke();
+
+                    const insulatorSway = Math.sin(animTime * 1.8 + idx * 0.9) * 1.6;
+                    [-arm.span, 0, arm.span].forEach((offsetX, phaseIdx) => {
+                        const anchorX = t.x + offsetX * (phaseIdx === 1 ? 0 : 0.92);
+                        const tipX = anchorX + insulatorSway;
+                        const tipY = armY + 18;
+
+                        ctx.strokeStyle = lerpRGB([56, 189, 248], [125, 211, 252], nightMix);
+                        ctx.lineWidth = 1.8;
+                        ctx.beginPath();
+                        ctx.moveTo(anchorX, armY);
+                        ctx.lineTo(tipX, tipY);
+                        ctx.stroke();
+
+                        ctx.fillStyle = isFaultTower
+                            ? '#fca5a5'
+                            : (isTowerPassed ? '#7dd3fc' : lerpRGB([71, 85, 105], [148, 163, 184], nightMix));
+                        for (let d = 1; d <= 4; d++) {
+                            const df = d / 4.5;
+                            const dx = lerp(anchorX, tipX, df);
+                            const dy = lerp(armY, tipY, df);
+                            ctx.beginPath();
+                            ctx.ellipse(dx, dy, 3.4, 1.3, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                        if (phaseIdx === 1 && (isTowerPassed || towerEnergy > 0.2)) {
+                            const coronaIntensity = Math.max(towerEnergy, isTowerPassed ? 0.55 : 0);
+                            const coronaGrad = ctx.createRadialGradient(tipX, tipY, 1, tipX, tipY, 15);
+                            const cColor = isFaultTower
+                                ? '239, 68, 68'
+                                : (arm.isLower && isRerouted ? '16, 185, 129' : '56, 189, 248');
+                            coronaGrad.addColorStop(0, `rgba(255, 255, 255, ${0.9 * coronaIntensity})`);
+                            coronaGrad.addColorStop(0.4, `rgba(${cColor}, ${0.65 * coronaIntensity})`);
+                            coronaGrad.addColorStop(1, `rgba(${cColor}, 0)`);
+                            ctx.fillStyle = coronaGrad;
+                            ctx.beginPath();
+                            ctx.arc(tipX, tipY, 15, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    });
+                });
+
+                // 6. Tower ID Telemetry Stencil Plate
+                if (isTowerPassed || towerEnergy > 0.25) {
+                    ctx.font = '600 10px "JetBrains Mono", monospace';
+                    ctx.fillStyle = isFaultTower
+                        ? 'rgba(248, 113, 113, 0.9)'
+                        : 'rgba(125, 211, 252, 0.85)';
+                    ctx.fillText(t.id, t.x - 7, t.baseY + 18);
+                }
+
+                // 7. Stationary Red Aviation Warning Beacon at Peak
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.arc(t.x, topY - 3, 3.2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // Exact Quadratic Bezier evaluation matching ctx.quadraticCurveTo((p1.x+p2.x)/2, (p1.y+p2.y)/2 + sag, p2.x, p2.y)
+        function sampleCatenarySpan(p1, p2, t, sag) {
+            const mt = 1 - t;
+            const cx = (p1.x + p2.x) * 0.5;
+            const cy = (p1.y + p2.y) * 0.5 + sag;
+            return {
+                x: mt * mt * p1.x + 2 * mt * t * cx + t * t * p2.x,
+                y: mt * mt * p1.y + 2 * mt * t * cy + t * t * p2.y
+            };
+        }
+
+        function drawTransmissionLinesAndFlow() {
+            const totalSpans = towers.length;
+
+            [false, true].forEach(isLower => {
+                for (let s = 0; s < totalSpans; s++) {
+                    const p1 = getTowerWirePoint(s, isLower);
+                    const p2 = getTowerWirePoint(s + 1, isLower);
+                    const sag = 38 + s * 2.5;
+
+                    const isFaultSpan = !isLower && s === 2 && isFaultActive;
+                    const isBackupReroute = isLower && isRerouted;
+
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.quadraticCurveTo((p1.x + p2.x) / 2, (p1.y + p2.y) / 2 + sag, p2.x, p2.y);
+
+                    if (isFaultSpan) {
+                        ctx.strokeStyle = `rgba(239, 68, 68, ${0.55 + Math.sin(animTime * 16) * 0.4})`;
+                        ctx.lineWidth = 3.2;
+                    } else if (isBackupReroute) {
+                        ctx.strokeStyle = 'rgba(16, 185, 129, 0.85)';
+                        ctx.lineWidth = 3.0;
+                    } else {
+                        ctx.strokeStyle = lerpRGBA([30, 41, 59], [56, 189, 248], nightMix, lerp(0.58, 0.45, nightMix));
+                        ctx.lineWidth = 2.0;
+                    }
+                    ctx.stroke();
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.quadraticCurveTo((p1.x + p2.x) / 2, (p1.y + p2.y) / 2 + sag, p2.x, p2.y);
+                    ctx.setLineDash([24, 64]);
+                    ctx.lineDashOffset = -animTime * (isBackupReroute ? 135 : 75);
+                    ctx.strokeStyle = isFaultSpan
+                        ? '#ef4444'
+                        : isBackupReroute
+                            ? '#10b981'
+                            : lerpRGB([2, 132, 199], [0, 242, 254], nightMix);
+                    ctx.lineWidth = isBackupReroute ? 3.2 : 2.4;
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            });
+
+            const corridorProgress = Math.min(1, smoothScrollProgress / 0.74);
+            const globalFloat = corridorProgress * totalSpans;
+            const activeSpanIndex = Math.min(totalSpans - 1, Math.floor(globalFloat));
+            const localT = corridorProgress >= 1 ? 1 : (globalFloat - activeSpanIndex);
+
+            // Energized wire trace hugging the exact power line path
+            ctx.save();
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.8;
+            ctx.shadowColor = '#00f2fe';
+            ctx.shadowBlur = 9;
+
+            for (let s = 0; s <= activeSpanIndex; s++) {
+                const p1 = getTowerWirePoint(s, isRerouted);
+                const p2 = getTowerWirePoint(s + 1, isRerouted);
+                const sag = 38 + s * 2.5;
+                const maxT = s < activeSpanIndex ? 1 : localT;
+
+                ctx.beginPath();
+                for (let step = 0; step <= 24; step++) {
+                    const u = (step / 24) * maxT;
+                    const pt = sampleCatenarySpan(p1, p2, u, sag);
+                    if (step === 0) ctx.moveTo(pt.x, pt.y);
+                    else ctx.lineTo(pt.x, pt.y);
+                }
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Compact, crisp high-voltage current pulse locked directly onto the conductor wire
+            const pStart = getTowerWirePoint(activeSpanIndex, isRerouted);
+            const pEnd = getTowerWirePoint(activeSpanIndex + 1, isRerouted);
+            const headPt = sampleCatenarySpan(pStart, pEnd, localT, 38 + activeSpanIndex * 2.5);
+
+            const orbGrad = ctx.createRadialGradient(headPt.x, headPt.y, 1, headPt.x, headPt.y, 11);
+            orbGrad.addColorStop(0,   '#ffffff');
+            orbGrad.addColorStop(0.32,'#fef08a');
+            orbGrad.addColorStop(0.68,'#00f2fe');
+            orbGrad.addColorStop(1,   'rgba(0, 242, 254, 0)');
+            ctx.fillStyle = orbGrad;
+            ctx.beginPath();
+            ctx.arc(headPt.x, headPt.y, 11, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(headPt.x, headPt.y, 2.6, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (lightningFlashAlpha > 0.01) {
+                const f1 = getTowerWirePoint(2, false);
+                const f2 = getTowerWirePoint(3, false);
+                const strikePt = sampleCatenarySpan(f1, f2, 0.5, 43);
+
+                ctx.save();
+                ctx.strokeStyle = `rgba(254, 240, 138, ${lightningFlashAlpha})`;
+                ctx.lineWidth = 4.5;
+                ctx.shadowColor = '#f59e0b';
+                ctx.shadowBlur = 24;
+                ctx.beginPath();
+                ctx.moveTo(strikePt.x - 35, 120);
+                ctx.lineTo(strikePt.x + 15, 310);
+                ctx.lineTo(strikePt.x - 22, 460);
+                ctx.lineTo(strikePt.x + 18, 620);
+                ctx.lineTo(strikePt.x, strikePt.y);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        function drawMetropolitanSmartCity(camX) {
+            if (camX + 2600 < 5350) return;
+
+            const cityWaveProgress = Math.min(1, Math.max(0, (smoothScrollProgress - 0.74) / 0.24));
+            const surgeCurrentX = 5560 + cityWaveProgress * 1680;
+
+            if (cityWaveProgress > 0.01) {
+                const domeGlow = ctx.createRadialGradient(6420, 820, 50, 6420, 820, 960);
+                domeGlow.addColorStop(0,   `rgba(56, 189, 248, ${cityWaveProgress * 0.34})`);
+                domeGlow.addColorStop(0.45,`rgba(16, 185, 129, ${cityWaveProgress * 0.16})`);
+                domeGlow.addColorStop(1,   'rgba(0, 242, 254, 0)');
+                ctx.fillStyle = domeGlow;
+                ctx.beginPath();
+                ctx.arc(6420, 820, 960, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 1. Background Skyline Tier
+            bgCityBuildings.forEach((bg, idx) => {
+                const topY = 990 - bg.h;
+                const bEnergy = Math.min(1, Math.max(0, (surgeCurrentX - bg.x) / (bg.w + 70)));
+
+                ctx.fillStyle = lerpRGB([51, 65, 85], [8, 13, 26], nightMix);
+                ctx.fillRect(bg.x, topY, bg.w, bg.h);
+
+                ctx.strokeStyle = `rgba(148, 163, 184, ${0.15 + bEnergy * 0.25})`;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(bg.x, topY, bg.w, bg.h);
+
+                if (bEnergy > 0.01) {
+                    const padX = 8;
+                    const padY = 16;
+                    const cellW = (bg.w - padX * 2) / bg.cols;
+                    const cellH = (bg.h - padY - 14) / bg.floors;
+
+                    for (let r = 0; r < bg.floors; r++) {
+                        const floorFromBottom = (bg.floors - 1 - r) / bg.floors;
+                        if (floorFromBottom > bEnergy) continue;
+
+                        for (let c = 0; c < bg.cols; c++) {
+                            const seed = (idx * 29 + r * 13 + c * 7) % 10;
+                            if (seed < 4) continue;
+                            const wx = bg.x + padX + c * cellW + 1.5;
+                            const wy = topY + padY + r * cellH + 1.5;
+                            ctx.fillStyle = `rgba(125, 211, 252, ${0.42 * bEnergy})`;
+                            ctx.fillRect(wx, wy, Math.max(2, cellW - 4), Math.max(1.5, cellH - 3.5));
+                        }
+                    }
+                }
+            });
+
+            // 2. Metropolitan Waterfront Embarcadero & Underground Feeder Conduit
+            ctx.fillStyle = lerpRGB([51, 65, 85], [15, 23, 42], nightMix);
+            ctx.fillRect(5420, 990, 1820, 42);
+
+            ctx.strokeStyle = 'rgba(51, 65, 85, 0.8)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(5560, 994);
+            ctx.lineTo(7220, 994);
+            ctx.stroke();
+
+            if (cityWaveProgress > 0) {
+                ctx.save();
+                ctx.strokeStyle = '#00f2fe';
+                ctx.lineWidth = 3.2;
+                ctx.shadowColor = '#00f2fe';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.moveTo(5560, 994);
+                ctx.lineTo(surgeCurrentX, 994);
+                ctx.stroke();
+
+                const feederOrb = ctx.createRadialGradient(surgeCurrentX, 994, 1, surgeCurrentX, 994, 10);
+                feederOrb.addColorStop(0, '#ffffff');
+                feederOrb.addColorStop(0.35, '#fef08a');
+                feederOrb.addColorStop(0.7, '#00f2fe');
+                feederOrb.addColorStop(1, 'rgba(0, 242, 254, 0)');
+                ctx.fillStyle = feederOrb;
+                ctx.beginPath();
+                ctx.arc(surgeCurrentX, 994, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // 3. 500kV Receiving Substation & BESS Battery Containers
+            const subEnergized = smoothScrollProgress >= 0.73 ? 1 : 0;
+            ctx.strokeStyle = subEnergized ? '#38bdf8' : lerpRGB([71, 85, 105], [100, 116, 139], nightMix);
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(5505, 835, 95, 155);
+
+            ctx.fillStyle = lerpRGB([71, 85, 105], [30, 41, 59], nightMix);
+            ctx.fillRect(5610, 905, 82, 85);
+
+            ctx.fillStyle = isRerouted ? '#10b981' : (subEnergized ? '#00f2fe' : '#475569');
+            for (let bar = 0; bar < 3; bar++) {
+                ctx.fillRect(5622, 922 + bar * 20, 58, 8);
+            }
+
+            // 4. Foreground Curtain-Wall Skyscrapers & St. Jude Trauma Hospital
+            cityBuildings.forEach((b, bIdx) => {
+                const topY = 990 - b.h;
+                const bEnergy = Math.min(1, Math.max(0, (surgeCurrentX - b.x) / (b.w + 65)));
+
+                const bGrad = ctx.createLinearGradient(b.x, topY, b.x + b.w, 990);
+                bGrad.addColorStop(0,   lerpRGB([71, 85, 105], [15, 23, 42], nightMix));
+                bGrad.addColorStop(0.55,lerpRGB([51, 65, 85], [9, 14, 28],  nightMix));
+                bGrad.addColorStop(1,   lerpRGB([30, 41, 59], [2, 6, 17],   nightMix));
+                ctx.fillStyle = bGrad;
+                ctx.fillRect(b.x, topY, b.w, b.h);
+
+                ctx.strokeStyle = bEnergy > 0.1
+                    ? `rgba(56, 189, 248, ${0.3 + bEnergy * 0.55})`
+                    : `rgba(148, 163, 184, ${lerp(0.4, 0.2, nightMix)})`;
+                ctx.lineWidth = bEnergy > 0.5 ? 1.8 : 1.2;
+                ctx.strokeRect(b.x, topY, b.w, b.h);
+
+                if (b.crown && bEnergy > 0.2) {
+                    const crownAlpha = Math.min(1, (bEnergy - 0.2) / 0.8);
+                    ctx.save();
+                    ctx.fillStyle = b.isHospital
+                        ? `rgba(16, 185, 129, ${crownAlpha})`
+                        : `rgba(56, 189, 248, ${crownAlpha})`;
+                    ctx.shadowColor = b.isHospital ? '#10b981' : '#00f2fe';
+                    ctx.shadowBlur = 12 * crownAlpha;
+                    ctx.fillRect(b.x + 3, topY + 3, b.w - 6, 4.5);
+                    ctx.restore();
+                }
+
+                if (b.spire) {
+                    ctx.strokeStyle = '#94a3b8';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(b.x + b.w * 0.5, topY);
+                    ctx.lineTo(b.x + b.w * 0.5, topY - 58);
+                    ctx.stroke();
+
+                    ctx.fillStyle = bEnergy > 0.8 ? '#f43f5e' : 'rgba(239, 68, 68, 0.35)';
+                    ctx.beginPath();
+                    ctx.arc(b.x + b.w * 0.5, topY - 58, 3.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                const padX = 10;
+                const padY = b.isHospital ? 90 : 20;
+                const availW = b.w - padX * 2;
+                const availH = b.h - padY - 16;
+                const cellW = availW / b.cols;
+                const cellH = availH / b.floors;
+
+                for (let r = 0; r < b.floors; r++) {
+                    const floorFromBottom = (b.floors - 1 - r) / b.floors;
+                    const isFloorPowered = bEnergy > floorFromBottom;
+                    const floorGlowIntensity = isFloorPowered
+                        ? Math.min(1, (bEnergy - floorFromBottom) * 3.5)
+                        : 0;
+
+                    for (let c = 0; c < b.cols; c++) {
+                        const seed = (bIdx * 31 + r * 17 + c * 13) % 10;
+                        if (seed < 2) continue;
+
+                        const wx = b.x + padX + c * cellW + 1.5;
+                        const wy = topY + padY + r * cellH + 1.5;
+                        const ww = Math.max(2, cellW - 4);
+                        const wh = Math.max(2, cellH - 3.5);
+
+                        if (floorGlowIntensity <= 0.01) {
+                            ctx.fillStyle = `rgba(148, 163, 184, ${lerp(0.14, 0.05, nightMix)})`;
+                            ctx.fillRect(wx, wy, ww, wh);
+                        } else if (b.isHospital) {
+                            ctx.fillStyle = `rgba(110, 231, 183, ${0.95 * floorGlowIntensity})`;
+                            ctx.fillRect(wx, wy, ww, wh);
+                        } else {
+                            ctx.fillStyle = seed % 2 === 0
+                                ? `rgba(254, 240, 138, ${0.95 * floorGlowIntensity})`
+                                : `rgba(125, 211, 252, ${0.90 * floorGlowIntensity})`;
+                            ctx.fillRect(wx, wy, ww, wh);
+                        }
+                    }
+                }
+
+                if (bEnergy > 0.15) {
+                    const bGlow = ctx.createRadialGradient(
+                        b.x + b.w * 0.5, topY + b.h * 0.55, 10,
+                        b.x + b.w * 0.5, topY + b.h * 0.55, b.w * 1.1
+                    );
+                    const glowColor = b.isHospital ? '16, 185, 129' : '56, 189, 248';
+                    bGlow.addColorStop(0, `rgba(${glowColor}, ${0.22 * bEnergy})`);
+                    bGlow.addColorStop(1, `rgba(${glowColor}, 0)`);
+                    ctx.fillStyle = bGlow;
+                    ctx.fillRect(b.x - 30, topY, b.w + 60, b.h);
+                }
+
+                if (bEnergy > 0.1) {
+                    const reflGrad = ctx.createLinearGradient(0, 1035, 0, 1185);
+                    const reflCol = b.isHospital ? '52, 211, 153' : '253, 224, 71';
+                    reflGrad.addColorStop(0, `rgba(${reflCol}, ${0.26 * bEnergy})`);
+                    reflGrad.addColorStop(1, `rgba(${reflCol}, 0)`);
+                    ctx.fillStyle = reflGrad;
+                    ctx.fillRect(b.x + 8, 1035, b.w - 16, 145);
+                }
+
+                if (b.isHospital) {
+                    const cx = b.x + b.w * 0.5;
+                    const cy = topY + 46;
+                    ctx.save();
+                    ctx.fillStyle = bEnergy > 0.2 ? '#10b981' : '#334155';
+                    if (bEnergy > 0.2) {
+                        ctx.shadowColor = '#10b981';
+                        ctx.shadowBlur = 18 * bEnergy;
+                    }
+                    ctx.fillRect(cx - 8, cy - 24, 16, 48);
+                    ctx.fillRect(cx - 24, cy - 8, 48, 16);
+                    ctx.restore();
+                }
+            });
+        }
+
+        function updateUIReadouts(camX, scale) {
+            const pct = Math.round(smoothScrollProgress * 100);
+            const pctEl = document.getElementById('scroll-pct-readout');
+            if (pctEl) pctEl.textContent = `${pct}%`;
+
+            const cityWave = Math.min(1, Math.max(0, (smoothScrollProgress - 0.74) / 0.24));
+            const cityLoadEl = document.getElementById('metric-city-load');
+            if (cityLoadEl) {
+                if (cityWave <= 0.01) {
+                    cityLoadEl.textContent = '0% (Approach)';
+                    cityLoadEl.className = 'font-mono text-sm font-bold text-slate-400';
+                } else {
+                    const mw = Math.round(cityWave * 840);
+                    cityLoadEl.textContent = `${mw} MW (${Math.round(cityWave * 100)}%)`;
+                    cityLoadEl.className = 'font-mono text-sm font-bold text-emerald-400';
+                }
+            }
+
+            const thresholds = [0, 0.28, 0.58, 0.76];
+            for (let i = 0; i < 4; i++) {
+                const btn = document.getElementById(`station-${i}`);
+                const isNext = i < 3 ? smoothScrollProgress < thresholds[i + 1] : true;
+                if (smoothScrollProgress >= thresholds[i] && isNext) {
+                    if (btn) btn.classList.add('active');
+                } else if (btn) {
+                    btn.classList.remove('active');
+                }
+            }
+
+            const heroBrand = document.getElementById('hero-brand');
+            const heroLeft = document.getElementById('hero-left-cluster');
+            const heroRight = document.getElementById('hero-right-cluster');
+            if (heroBrand && heroLeft) {
+                const targetHeroAlpha = 1 - smoothstep(0.008, 0.085, smoothScrollProgress);
+                smoothHeroAlpha += (targetHeroAlpha - smoothHeroAlpha) * 0.14;
+
+                const easeOutProgress = 1 - smoothHeroAlpha;
+                const leftShiftX = easeOutProgress * -48;
+                const leftLiftY = easeOutProgress * -20;
+                const rightShiftX = easeOutProgress * 54;
+                const rightLiftY = easeOutProgress * 22;
+
+                heroBrand.style.opacity = smoothHeroAlpha.toFixed(3);
+                heroLeft.style.transform = `translate3d(${leftShiftX.toFixed(2)}px, ${leftLiftY.toFixed(2)}px, 0)`;
+                heroLeft.style.pointerEvents = smoothHeroAlpha > 0.35 ? 'auto' : 'none';
+                if (heroRight) {
+                    heroRight.style.transform = `translate3d(${rightShiftX.toFixed(2)}px, ${rightLiftY.toFixed(2)}px, 0)`;
+                }
+            }
+
+            // Smooth, snap-free C1-continuous stage typography motion with damped interpolation
+            scrollStageWindows.forEach((stage, idx) => {
+                const el = document.getElementById(stage.id);
+                if (!el) return;
+
+                // Smoothstep fade-in and fade-out envelopes (zero velocity at boundaries)
+                const fadeIn = smoothstep(stage.start, stage.peakStart, smoothScrollProgress);
+                const fadeOut = 1 - smoothstep(stage.peakEnd, stage.end, smoothScrollProgress);
+                const targetOpacity = Math.max(0, Math.min(1, fadeIn * fadeOut));
+
+                // Continuous, monotonic phase curve across [start..end] with gentle plateau drift
+                // Eliminates any jump between entrance, plateau, and exit
+                const normU = Math.max(0, Math.min(1, (smoothScrollProgress - stage.start) / (stage.end - stage.start)));
+                const centered = (normU - 0.5) * 2; // [-1 .. +1]
+                // Blend linear drift (0.32) with cubic ease (0.68) so motion slows smoothly in the center without stopping or snapping
+                const targetPhase = centered * 0.32 + (centered * centered * centered) * 0.68;
+
+                stage.curOpacity += (targetOpacity - stage.curOpacity) * 0.14;
+                stage.curPhase += (targetPhase - stage.curPhase) * 0.14;
+
+                el.style.opacity = stage.curOpacity.toFixed(3);
+
+                const leftBlock = el.querySelector('.stage-left-block');
+                const rightBlock = el.querySelector('.stage-right-block');
+                const dirSign = idx % 2 === 0 ? 1 : -1;
+
+                if (leftBlock) {
+                    const lx = -stage.curPhase * 62;
+                    const ly = stage.curPhase * 18 * dirSign;
+                    leftBlock.style.transform = `translate3d(${lx.toFixed(2)}px, ${ly.toFixed(2)}px, 0)`;
+                }
+                if (rightBlock) {
+                    const rx = -stage.curPhase * 96;
+                    const ry = -stage.curPhase * 22 * dirSign;
+                    rightBlock.style.transform = `translate3d(${rx.toFixed(2)}px, ${ry.toFixed(2)}px, 0)`;
+                }
+            });
+        }
+
+        function renderScene(timestamp) {
+            animTime = (timestamp || 0) * 0.001;
+
+            smoothScrollProgress += (targetScrollProgress - smoothScrollProgress) * 0.09;
+            const targetNight = isNightMode ? 1.0 : 0.0;
+            nightMix += (targetNight - nightMix) * 0.07;
+
+            if (lightningFlashAlpha > 0) {
+                lightningFlashAlpha = Math.max(0, lightningFlashAlpha - 0.035);
+            }
+
+            const scale = canvas.height / WORLD_HEIGHT;
+            const viewWorldW = canvas.width / scale;
+            const maxCamX = Math.max(0, WORLD_WIDTH - viewWorldW);
+            const camX = smoothScrollProgress * maxCamX;
+
+            ctx.save();
+            ctx.scale(scale, scale);
+            ctx.translate(-camX, 0);
+
+            drawSkyAndAtmosphere(camX, viewWorldW);
+
+            drawMountainRange(camX, 1.2, 470, 210, 0.35, [92, 126, 162], [11, 22, 44], true);
+            drawValleyMist(camX, 595, 55);
+            drawMountainRange(camX, 3.8, 610, 175, 0.58, [64, 98, 128],  [14, 27, 50], true);
+            drawValleyMist(camX, 745, 45);
+            drawMountainRange(camX, 6.4, 735, 130, 0.80, [45, 78, 96],   [12, 22, 38], false);
+
+            drawMorningBirds(camX);
+
+            drawValleyAndRiver(camX);
+
+            drawLatticeTowers(camX);
+            drawTransmissionLinesAndFlow();
+
+            drawMetropolitanSmartCity(camX);
+
+            ctx.restore();
+
+            updateUIReadouts(camX, scale);
+            requestAnimationFrame(renderScene);
+        }
+
+        function setScrollProgress(newProgress, syncNativeScroll = true) {
+            targetScrollProgress = Math.max(0, Math.min(1, newProgress));
+            if (syncNativeScroll) {
+                const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+                if (maxScroll > 0) {
+                    window.scrollTo(0, targetScrollProgress * maxScroll);
+                }
+            }
+        }
+
+        window.toggleDayNight = function () { window.gridpulseTheme.toggle(); };
+        window.addEventListener('gridpulse-theme', event => {
+            isNightMode = event.detail === 'dark';
+            const knob = document.getElementById('theme-knob');
+            if (knob) knob.style.transform = isNightMode ? 'translateX(24px)' : 'translateX(0px)';
+        });
+
+        window.scrollToStation = function (progress) {
+            setScrollProgress(progress, true);
+        };
+
+        window.triggerFaultSimulation = function () {
+            if (isFaultActive) return;
+            isFaultActive = true;
+            isRerouted = false;
+            lightningFlashAlpha = 1.0;
+
+            window.scrollToStation(0.24);
+
+            const statusTitle = document.getElementById('hud-status-title');
+            const hudDot = document.getElementById('hud-dot');
+            const navDot = document.getElementById('nav-status-dot');
+            const logLine = document.getElementById('agent-log-line');
+            const faultBtnLabel = document.getElementById('fault-btn-label');
+            const resetBtn = document.getElementById('reset-btn');
+
+            if (statusTitle) statusTitle.textContent = 'FAULT DETECTED: SPAN TX-882 TRIPPED';
+            if (hudDot) hudDot.className = 'w-2 h-2 rounded-full bg-rose-500';
+            if (navDot) navDot.className = 'w-2 h-2 rounded-full bg-rose-500';
+            if (faultBtnLabel) faultBtnLabel.textContent = 'Isolating Cascade...';
+            if (logLine) logLine.innerHTML = '<span class="text-rose-400">FalkorDB: 4-hop thermal overload predicted on Metro Substation!</span>';
+
+            window.selectCypherTab(1);
+
+            setTimeout(() => {
+                if (!isFaultActive) return;
+                isRerouted = true;
+                if (statusTitle) statusTitle.textContent = 'ISLANDED & REROUTED VIA BESS (1.8ms)';
+                if (hudDot) hudDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+                if (navDot) navDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+                if (faultBtnLabel) faultBtnLabel.textContent = 'Fault Mitigated ✓';
+                if (resetBtn) resetBtn.classList.remove('hidden');
+                if (logLine) logLine.innerHTML = '<span class="text-emerald-400">MCP Action: Breaker #12 opened + 45MW BESS injected on lower circuit.</span>';
+                window.selectCypherTab(2);
+            }, 1100);
+        };
+
+        window.resetGridSimulation = function () {
+            isFaultActive = false;
+            isRerouted = false;
+            lightningFlashAlpha = 0;
+
+            const statusTitle = document.getElementById('hud-status-title');
+            const faultBtnLabel = document.getElementById('fault-btn-label');
+            const resetBtn = document.getElementById('reset-btn');
+            const logLine = document.getElementById('agent-log-line');
+
+            if (statusTitle) statusTitle.textContent = 'NOMINAL CORRIDOR FLOW (500kV)';
+            if (faultBtnLabel) faultBtnLabel.textContent = 'Inject Fault (Span 03)';
+            if (resetBtn) resetBtn.classList.add('hidden');
+            if (logLine) {
+                logLine.innerHTML = '<span>MCP Agent: Monitoring 9 HV spans & 23 city high-rises.</span><span id="scroll-pct-readout" class="text-sky-400 font-semibold">0%</span>';
+            }
+            window.selectCypherTab(0);
+        };
+
+        window.toggleTelemetryDrawer = function () {
+            isDrawerOpen = !isDrawerOpen;
+            const drawer = document.getElementById('telemetry-drawer');
+            const chevron = document.getElementById('drawer-chevron');
+            if (!drawer) return;
+            if (isDrawerOpen) {
+                drawer.classList.remove('translate-y-[120%]', 'opacity-0', 'pointer-events-none');
+                if (chevron) chevron.textContent = '▲';
+            } else {
+                drawer.classList.add('translate-y-[120%]', 'opacity-0', 'pointer-events-none');
+                if (chevron) chevron.textContent = '▼';
+            }
+        };
+
+        window.selectCypherTab = function (idx) {
+            activeCypherIndex = idx;
+            const box = document.getElementById('cypher-code-box');
+            if (box) box.textContent = cypherQueries[idx];
+            for (let i = 0; i < 3; i++) {
+                const tab = document.getElementById(`cypher-tab-${i}`);
+                if (!tab) continue;
+                if (i === idx) {
+                    tab.className = 'px-2 py-1 rounded text-[10px] font-mono bg-sky-500/20 text-sky-300 border border-sky-500/40';
+                } else {
+                    tab.className = 'px-2 py-1 rounded text-[10px] font-mono text-slate-400 hover:text-slate-200 border border-transparent';
+                }
+            }
+        };
+
+        window.copyCypherCode = function () {
+            const tempInput = document.createElement('textarea');
+            tempInput.value = cypherQueries[activeCypherIndex];
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+
+            const copyBtn = document.getElementById('copy-cypher-btn');
+            if (copyBtn) {
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1400);
+            }
+        };
+
+        // Unified Wheel Handler: Drives horizontal camera pan from BOTH vertical mouse wheel and horizontal trackpad swipes
+        window.addEventListener('wheel', (e) => {
+            if (e.target && e.target.closest && e.target.closest('#cypher-code-box')) return;
+            e.preventDefault();
+            const primaryDelta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+            setScrollProgress(targetScrollProgress + primaryDelta * 0.00042, true);
+        }, { passive: false });
+
+        // Native scrollbar fallback synchronization
+        window.addEventListener('scroll', () => {
+            const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+            if (maxScroll > 0) {
+                const nativePct = window.scrollY / maxScroll;
+                if (Math.abs(nativePct - targetScrollProgress) > 0.01) {
+                    targetScrollProgress = Math.max(0, Math.min(1, nativePct));
+                }
+            }
+        }, { passive: true });
+
+        // Click-and-Drag & Touch Swipe Panning on the Landscape
+        let isDraggingScene = false;
+        let dragStartX = 0;
+        let dragStartProgress = 0;
+
+        window.addEventListener('pointerdown', (e) => {
+            if (e.target && e.target.closest && e.target.closest('header, main, aside, section, button')) return;
+            isDraggingScene = true;
+            dragStartX = e.clientX;
+            dragStartProgress = targetScrollProgress;
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isDraggingScene) return;
+            const dx = dragStartX - e.clientX;
+            setScrollProgress(dragStartProgress + (dx / window.innerWidth) * 0.45, true);
+        });
+
+        window.addEventListener('pointerup', () => {
+            isDraggingScene = false;
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                setScrollProgress(targetScrollProgress + 0.06, true);
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                setScrollProgress(targetScrollProgress - 0.06, true);
+            }
+        });
+
+        window.onload = function () {
+            resizeCanvas();
+            requestAnimationFrame(renderScene);
+        };
+    </script>
+
+    <section id="landing-scenarios" aria-label="Landing page simulation">
+      <span>VISUAL DEMO</span>
+      <button data-landing-scenario="1" aria-pressed="false">Lightning</button>
+      <button data-landing-scenario="2" aria-pressed="false">Wildfire</button>
+      <button data-landing-scenario="3" aria-pressed="false">Heatwave</button>
+      <label><input id="landing-auto" type="checkbox"> Auto-cycle</label>
+    </section>
+    <script src="assets/landing.js"></script>
+</body>
+</html>
