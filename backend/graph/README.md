@@ -232,6 +232,25 @@ app.include_router(graph.router)    # /api/graph/topology, /api/graph/trace-casc
 | `GET /api/graph/reroute` / `reroute_paths()` | `algo.SPpaths` k lowest-impedance paths, dropping any that cross a tripped circuit. After the lightning trip, the best path uses `TX_882:LOWER_BACKUP`. |
 | `POST /api/graph/evaluate-plan` / `evaluate_plan()` | A what-if check of `{trip_breakers, bess_dispatch}` against the same guards actuation uses: breaker guard, SOC and discharge limits, Tier-1 supply, and a projection within limits. Returns `APPROVED` or `REJECTED` with reasons. It never actuates. |
 
+## Graph memory ([`memory.py`](memory.py))
+
+Finished runs are stored in the grid graph as `(:Incident)-[:AT]->(towers/substations)`, `-[:TOOK]->(:Action)-[:TARGETED]->(consumer/BESS)` and `-[:RESULTED_IN]->(:Outcome)`. Playbooks are keyed by trigger signature (for example `TRIP:TX_882:UPPER_PRIMARY`) and count successes and failures.
+
+`recall(origin_id, hops)` finds incidents and playbooks within N grid hops of a fault. The interceptor reuses a playbook only if `evaluate_plan` re-approves it against the current state. Memory labels are outside the canonical topology, so `reset_grid()` keeps them.
+
+## User-built networks ([`networks.py`](networks.py), [`networks_router.py`](networks_router.py))
+
+- **Specs.** A JSON spec lists generators, buses, substations, lines (with an optional backup circuit), loads and batteries. It is validated, with every problem listed, and written into its own graph, `gridpulse_net_<id>`, using the canonical labels, so every engine feature works on it.
+- **Registry.** The graph `gridpulse_registry` records each network's owner; other operators get 404.
+- **Templates:** `demo_corridor`, `ring`, `meshed_city`, and `ieee118`. The IEEE 118-bus case is public data via pandapower, with synthetic ratings, tiers and batteries; see [`data/build_ieee118.py`](data/build_ieee118.py).
+- **Simulation.** `simulate()` runs trips, demand scaling, battery and shedding what-ifs, and N-1. For each overloaded case it searches for the smallest safe fix:
+  1. Each round, try every battery and Tier-3 load, re-solve the grid, and keep whichever removes the most total overload.
+  2. Prune any shedding that turned out to be unnecessary.
+  3. Shrink battery setpoints to the minimum that still keeps limits.
+
+  The result is `SAVED`, `NOT_SAVEABLE` (with the reason) or `NOT_NEEDED`.
+- **Power-flow islands.** `dc-pf/1` solves every generator-fed island with its own slack plant, and flags plants whose output exceeds `capacity_mw`.
+
 ## Measured timings (local Docker on macOS)
 
 The demo lightning trace (`assume_tripped`, 50 warm runs) takes 1.43 ms median (p95 1.91 ms) of FalkorDB server time across its 4 queries. The client round trip is 4.97 ms, and the full engine time including the model is 5.27 ms. A full reset or seed takes about 3.4 ms of server time.
