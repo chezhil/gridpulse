@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend import graph
+from backend.graph.networks_router import networks_router
 from backend.auth.router import auth_router
 from backend.audit.logger import audit_router
 from backend.simulator.grid_sim import grid_simulator as sim
@@ -46,11 +47,12 @@ app = FastAPI(title='GridPulse', version='1.0.0', lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:8000', 'http://127.0.0.1:8000',
     'http://localhost:5500', 'http://127.0.0.1:5500', 'http://localhost:8080', 'http://127.0.0.1:8080',
     'http://localhost:8765', 'http://127.0.0.1:8765', 'http://localhost:8766', 'http://127.0.0.1:8766'],
-    allow_methods=['GET', 'POST'], allow_headers=['Authorization', 'Content-Type', 'X-Operator-Token'])
+    allow_methods=['GET', 'POST', 'PUT', 'DELETE'], allow_headers=['Authorization', 'Content-Type', 'X-Operator-Token'])
 app.include_router(auth_router, prefix='/api/auth', tags=['auth'])
 app.include_router(audit_router, prefix='/api/audit', tags=['audit'])
 app.include_router(sim_router, prefix='/api/sim', tags=['simulator'])
 app.include_router(graph.router)
+app.include_router(networks_router)
 app.include_router(mcp_router)
 
 

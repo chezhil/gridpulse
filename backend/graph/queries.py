@@ -49,7 +49,7 @@ MATCH (a)-[r:SPAN|TERMINATES_AT]->(b)
 WITH collect({span_id: r.id, circuit: r.circuit, rel_type: type(r), src: a.id, dst: b.id,
               impedance_pu: r.impedance_pu, limit_mw: r.limit_mw, flow_mw: r.flow_mw, status: r.status}) AS circuits
 OPTIONAL MATCH (h:HydroPlant)-[:FEEDS]->(t)
-WITH circuits, collect({src: h.id, dst: t.id, output_mw: h.output_mw}) AS feeds
+WITH circuits, collect({src: h.id, dst: t.id, output_mw: h.output_mw, capacity_mw: h.capacity_mw}) AS feeds
 OPTIONAL MATCH (s:Substation)
 WITH circuits, feeds, collect({id: s.id, capacity_mw: s.capacity_mw, current_load_mw: s.current_load_mw,
                                status: s.status}) AS substations

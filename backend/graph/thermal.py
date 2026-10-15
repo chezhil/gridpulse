@@ -7,13 +7,16 @@ snapshot always gives the same answer.
 
 Model ``dc-pf/1`` (linear DC power flow, see :mod:`graph.powerflow`):
 
-1. Lossless DC approximation. The first HydroPlant is the slack bus; its
-   ``output_mw`` is reported but not enforced as a generation limit.
+1. Lossless DC approximation. Each connected part of the grid that contains
+   a HydroPlant is an island; its first plant (by id) is the slack and
+   supplies whatever the island's other plants (each injecting ``output_mw``)
+   do not. A plant with ``capacity_mw`` is overloaded when its output
+   exceeds that capacity (the slack's output is computed).
 2. Energised circuits are branches with reactance ``impedance_pu``; FEEDS
    links are near-ideal ties. Tripped circuits are removed.
 3. Substation net demand = sum of ``mw_demand`` over energised consumers minus
    ``active_injection_mw`` of connected BESS units (floored at 0), withdrawn
-   at the substation bus. Substations not connected to the slack are ISLANDED.
+   at the substation bus. Substations not connected to any plant are ISLANDED.
 4. Flows follow from the bus susceptance matrix, so parallel circuits and
    meshed corridors share flow by impedance. On a radial corridor this
    reduces to splitting each segment's flow in proportion to 1/impedance_pu.
@@ -36,10 +39,11 @@ from .powerflow import Branch, Network
 
 MODEL_ID = "dc-pf/1"
 ASSUMPTIONS = [
-    "Lossless linear (DC) power flow; the first HydroPlant is a slack bus (output_mw not enforced).",
+    "Lossless linear (DC) power flow; each plant-fed island has its own slack plant, other plants inject output_mw.",
+    "A plant with capacity_mw is overloaded when its output exceeds capacity_mw.",
     "Energised circuits share flow by impedance_pu, including parallel and meshed paths.",
     "Substation net demand = energised consumer mw_demand - BESS active_injection_mw (floored at 0).",
-    "Substations not connected to the source through energised circuits are islanded.",
+    "Substations not connected to any plant through energised circuits are islanded.",
     "Overload risk = loading above threshold_pct of limit_mw / capacity_mw.",
     "Relief options use PTDF sensitivities of each overloaded circuit to substation demand.",
     "Steady state only; thermal time constants and relay timing are not modelled.",
@@ -84,9 +88,18 @@ def _apply_overrides(snapshot: Dict[str, Any], overrides: Optional[Dict[str, Any
     applied: Dict[str, Any] = {}
     if not overrides:
         return consumers, bess, applied
-    unknown_keys = sorted(set(overrides) - {"bess_injection_mw", "deenergized_consumers"})
+    unknown_keys = sorted(set(overrides) - {"bess_injection_mw", "deenergized_consumers", "demand_scale"})
     if unknown_keys:
         raise GraphDataError("Unknown override keys", unknown=unknown_keys)
+
+    scale = overrides.get("demand_scale")
+    if scale is not None:
+        if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not 0 < scale <= 5:
+            raise GraphDataError("demand_scale must be a number in (0, 5]", value=scale)
+        for c in consumers:
+            if c.get("mw_demand") is not None:
+                c["mw_demand"] = float(c["mw_demand"]) * scale
+        applied["demand_scale"] = float(scale)
 
     by_id = {b["id"]: b for b in bess}
     injections = overrides.get("bess_injection_mw") or {}
@@ -140,8 +153,9 @@ def project_loading(
         tripped = c["status"] == "TRIPPED" or (c["span_id"], c["circuit"]) in assumed
         circuits.append({**c, "effective_status": "TRIPPED" if tripped else "ENERGIZED"})
 
-    sources = sorted({f["src"] for f in snapshot["feeds"]})
-    slack = sources[0]
+    plants: Dict[str, Dict[str, Any]] = {}
+    for f in snapshot["feeds"]:
+        plants.setdefault(f["src"], f)
     buses: Set[str] = {s["id"] for s in snapshot["substations"]}
     for c in circuits:
         buses.update((c["src"], c["dst"]))
@@ -153,15 +167,44 @@ def project_loading(
         for c in circuits
         if c["effective_status"] == "ENERGIZED"
     ]
-    net = Network(buses, branches, slack)
+    # Each connected part that contains a plant is its own island with its own slack
+    # (the first plant by id); parts without a plant are unsupplied.
+    nets: List[Network] = []
+    net_of: Dict[str, Network] = {}
+    for pid in sorted(plants):
+        if pid in net_of:
+            continue
+        net = Network(buses, branches, pid)
+        nets.append(net)
+        for bus in net.island:
+            net_of[bus] = net
+    energized: Set[str] = set(net_of)
 
     demand: Dict[str, float] = {}
     for s in snapshot["substations"]:
         load = sum(float(c["mw_demand"]) for c in consumers if c["substation_id"] == s["id"] and c["energized"])
         support = sum(float(b["active_injection_mw"]) for b in bess if b["substation_id"] == s["id"])
-        demand[s["id"]] = max(load - support, 0.0) if s["id"] in net.island else 0.0
-    flows = net.flows({sid: -mw for sid, mw in demand.items()})
-    served_subs = sorted(s for s in demand if s in net.island)
+        demand[s["id"]] = max(load - support, 0.0) if s["id"] in energized else 0.0
+    # Every plant except its island's slack injects its stated output; the slack balances the island.
+    flows: Dict[Any, float] = {}
+    slack_output: Dict[str, float] = {}
+    for net in nets:
+        injections = {sid: -mw for sid, mw in demand.items() if sid in net.island}
+        fixed = 0.0
+        for pid, plant in plants.items():
+            if pid != net.slack and pid in net.island:
+                mw = float(plant.get("output_mw") or 0.0)
+                injections[pid] = injections.get(pid, 0.0) + mw
+                fixed += mw
+        for key, value in net.flows(injections).items():
+            if value:
+                flows[key] = value
+        slack_output[net.slack] = sum(mw for sid, mw in demand.items() if sid in net.island) - fixed
+    served_subs = sorted(s for s in demand if s in energized)
+
+    def ptdf(key: Any, sid: str) -> float:
+        net = net_of.get(sid)
+        return net.ptdf_for(key, sid) if net else 0.0
 
     circuits_out: List[Dict[str, Any]] = []
     overloads: List[Dict[str, Any]] = []
@@ -179,7 +222,7 @@ def project_loading(
         if overload:
             excess = flow - threshold * c["limit_mw"]
             for sid in served_subs:
-                sens = net.ptdf_for(key, sid)
+                sens = ptdf(key, sid)
                 if abs(sens) > 1e-6:
                     overloaded_supply[sid].append(element)
                     # Reducing demand at sid is +injection there; it helps when it opposes the flow.
@@ -215,7 +258,7 @@ def project_loading(
     islanded: List[str] = []
     for s in sorted(snapshot["substations"], key=lambda x: x["id"]):
         sid = s["id"]
-        is_energized = sid in net.island
+        is_energized = sid in energized
         net_mw = demand[sid]
         loading = net_mw / s["capacity_mw"] * 100.0
         overload = is_energized and loading > threshold_pct
@@ -253,6 +296,39 @@ def project_loading(
             }
         )
 
+    generators_out: List[Dict[str, Any]] = []
+    for pid in sorted(plants):
+        plant = plants[pid]
+        if pid in slack_output:
+            output = slack_output[pid]
+        else:
+            output = float(plant.get("output_mw") or 0.0) if pid in energized else 0.0
+        capacity = plant.get("capacity_mw")
+        loading = (output / capacity * 100.0) if capacity else None
+        overload = bool(capacity) and output > capacity
+        relief = max(output - capacity, 0.0) if overload else 0.0
+        generators_out.append(
+            {
+                "id": pid,
+                "role": "SLACK" if pid in slack_output else "FIXED",
+                "output_mw": round(output, 3),
+                "capacity_mw": capacity,
+                "loading_pct": round(loading, 2) if loading is not None else None,
+                "overload": overload,
+            }
+        )
+        if overload:
+            reliefs.append(relief)
+            overloads.append(
+                {
+                    "element": pid,
+                    "kind": "GENERATOR",
+                    "loading_pct": round(loading, 2),
+                    "relief_mw": round(relief, 3),
+                    "relief_options": [{"substation_id": sid, "relief_mw": round(relief, 3), "sensitivity": 1.0} for sid in served_subs],
+                }
+            )
+
     if islanded:
         outcome = "ISLANDING_PREDICTED"
     elif overloads:
@@ -272,7 +348,8 @@ def project_loading(
         "relief_feasible": required != float("inf"),
         "overloads": overloads,
         "islanded_substations": islanded,
-        "energized_nodes": sorted(net.island),
+        "energized_nodes": sorted(energized),
         "circuits": circuits_out,
         "substations": substations_out,
+        "generators": generators_out,
     }
