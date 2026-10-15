@@ -62,7 +62,8 @@
     say('c-kpi-latency',number(m.graphblas_latency_ms,'ms'));say('c-kpi-load',number(m.substation_load_mw??m.city_load_mw,'MW'));say('c-kpi-bess',number(m.bess_injection_mw,'MW'));say('c-kpi-hospital',m.tier1_hospital_status||'UNKNOWN');
     const hydro=topology?.nodes.find(n=>n.id==='HYDRO_ALPINE_01')?.properties;
     say('c-kpi-hydro',number(hydro?.output_mw??hydro?.generation_mw,'MW'));
-    say('load-note',`SUB_METRO · ${number(m.city_load_pct,'%')}`);say('bess-note',`BESS · ${number(data.bess?.soc_pct,'% SOC')}`);say('hospital-note','Backend telemetry');
+    say('load-note',`City demand · ${number(m.city_load_pct,'%')}`);say('bess-note',`BESS · ${number(data.bess?.soc_pct,'% SOC')}`);say('hospital-note','Backend telemetry');
+    $('c-kpi-hospital').style.color=m.tier1_hospital_status==='PROTECTED'?'#10b981':m.tier1_hospital_status==='AT_RISK'?'#d97706':'#f43f5e';
     say('scada-topo-heading',`${data.scenario?.name||'Grid'} · ${data.scenario?.status||'UNKNOWN'}`);
     say('console-mcp-log',data.agent_steps?.length?pretty(data.agent_steps):pretty(data.agent_log||'No agent activity.'));
     consoleScenario=data.scenario?.id||0;consoleMitigated=data.scenario?.status==='MITIGATED';
