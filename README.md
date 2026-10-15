@@ -1,59 +1,107 @@
 # GridPulse
 
-A single-app educational demo of graph-grounded blackout interception: the original animated landing page, demo login, live operator dashboard, FalkorDB topology, deterministic SCADA tools, one simulator state, authenticated telemetry, and persistent SQLite audit records.
+An educational, single-worker grid interception demo: the animated landing page, demo login, live dashboard, one authoritative simulator, actual FalkorDB Cypher, guarded SCADA actions, authenticated telemetry, persistent SQLite audits, and an MCP stdio bridge.
 
 ## Start the complete app
 
-Requires Docker Desktop running. From this repository:
+Requires a running Docker Desktop. Use the **integration checkout**, not the original contributor checkout:
 
 ```sh
+cd /Users/chez/Documents/Codex/2026-10-15/new-chat/gridpulse
 docker compose up --build
 ```
 
-Open **http://localhost:8000**. Choose **Open Console**, then a demo role. The **operator** can trigger scenarios and reset; **engineer** and **auditor** are read-only. Demo access is not production authentication or NERC certification. API documentation is at http://localhost:8000/docs.
+Open **http://localhost:8000**, choose **Launch Console**, then **Chief Grid Operator**. Run lightning, inspect the Cypher trace and audit evidence, reset, and repeat for wildfire and heatwave. Engineer and auditor are read-only. API documentation: http://localhost:8000/docs.
 
-Run lightning, inspect the executed Cypher and audit evidence, and reset before running wildfire or heatwave. A duplicate request during an active run returns that run instead of starting a second one. A different concurrent scenario returns 409.
+Both the frontend and API use port 8000. The verified FalkorDB image is pinned by digest. Compose normally publishes FalkorDB on `127.0.0.1:6379`. On this machine, an existing unrelated database already owns 6379, so the integration checkout has an **untracked `.env` with `FALKORDB_HOST_PORT=6380`**. This starts a separate database without stopping or modifying the existing one. To reproduce explicitly:
 
-The frontend and backend share port 8000; no separate frontend server is needed. FalkorDB persists in a Docker volume and audit history in `./data/audit_log.db`. Startup restores nominal simulator/graph state; audit history survives restarts and grid reset. Run **one backend worker**.
+```sh
+FALKORDB_HOST_PORT=6380 docker compose up --build
+```
 
-## Without Docker for the Python process
+If this sandbox denies Buildx's default cache directory, use the equivalent verified command:
 
-Start a FalkorDB server on localhost:6379, then:
+```sh
+mkdir -p work/buildx
+BUILDX_CONFIG="$PWD/work/buildx" docker compose up --build
+```
+
+The backend always connects to the Compose service `falkordb:6379`; the host port only affects host-side development/tests. Database files persist in the Compose volume; audits persist in `./data/audit_log.db`. Startup restores nominal graph/simulator state and preserves audit history. Run **one backend worker**. Login tokens live in memory: after a backend restart, sign out and log in again. The dashboard reports an expired session instead of retrying it forever.
+
+## Repository-local Python environment
+
+Verified with Python 3.11. Development dependencies belong to this checkout:
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r backend/requirements-dev.txt
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+python -m pip install -r backend/requirements-dev.txt
+# When using the Compose database on host port 6380:
+FALKORDB_PORT=6380 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-See `.env.example` for configuration. Set variables in your shell; the app does not automatically load `.env` outside Docker Compose. Never commit credentials.
+Stop the Compose backend first (`docker compose stop backend`) before starting a host backend on the same port. Outside Compose, `.env` is not loaded automatically: export configuration or prefix commands as above. See `.env.example`. Never commit tokens or `.env`.
 
-If FalkorDB is unavailable, the site and demo login still load, `/health` reports `DEGRADED`, and live graph actions return explicit dependency errors. On the dashboard, **Offline simulation** switches to a clearly labelled browser-only model. Offline traces are illustrative and actions are never queued for later execution. Sign out and log in again to return to the live backend.
+## Model and runtime behavior
 
-## Integration decisions
+- `backend/graph/topology.py` is the nominal source of IDs and values. `TX_882` connects T3→T4; `TX_884` connects T5→T6; `TX_888` connects T9→SUB_METRO. Consumers connect through `DISTRIBUTES_TO`.
+- One simulator owns state. Its updates reach FalkorDB before graph decisions. The deterministic interceptor calls the shared Python guard functions; the external MCP bridge forwards to HTTP adapters in that same running backend.
+- The documented `radial-dc/1` projection models parallel circuits and load relief. Nominal demand is 840 MW. Heatwave multiplies every consumer by exactly 1.2: **1008 MW / 120% before mitigation**. Industrial demand is 62 MW nominal / 74.4 MW during heatwave. After shedding and 45 MW BESS support, energized demand is 778 MW for lightning/wildfire or 933.6 MW for heatwave; net substation load is 733 MW or 888.6 MW respectively.
+- Cypher evidence contains actual query text, parameters, returned rows, hashes and measured timings. Dashboard latency is the sum of server times for the pre-action trace queries, not physical actuation latency or a fixed 1.4 ms benchmark.
+- Every actuation requires current graph guards and durable audit intent before simulator mutation. Only isolated Tier-3 breakers are eligible; a supplied audit hash cannot authorize a hospital trip. BESS requires SOC above 40%, a finite positive amount within discharge/connection limits, and `LOWER_BACKUP`. Dispatch is an **absolute MW setpoint**, so repeating 45 MW does not add another 45 MW.
+- Successful actions refresh projected circuit flows. A failure after actuation records the applied result, intent ID and uncertain confirmation, marks the runtime failed, and requires reset. Audit failure before intent prevents actuation.
+- A duplicate trigger while a run is active returns the current run. A different concurrent scenario, or another trigger after completion, returns 409 until reset. Reset cancels pending work and preserves audits.
+- Mutating control routes require an operator login. All four SCADA tool adapters require a login; read-only roles can query tools but cannot actuate. WebSocket telemetry requires a current login token. No static bypass token is seeded.
+- A disconnected WebSocket retries and refreshes authoritative topology/state. Failed initial topology loads also retry. The topology shows the actual faulted span, backup reroute, BESS connection and shed consumer feeder. On narrow screens the diagram scrolls within its panel.
+- With an unavailable database, the site/login remain available, `/health` reports `DEGRADED`, and live graph actions fail explicitly. **Offline simulation** is a labelled browser-only model: no database timings and no queued backend actions. Sign out and log in again to return to live mode.
 
-- All four feature branches are merged on `integration/gridpulse-app`.
-- `backend/graph/topology.py` defines canonical IDs and nominal values across modules. `TX_882` is T3→T4; `TX_888` is T9→SUB_METRO. Consumers are reached through `DISTRIBUTES_TO`.
-- The graph branch's documented `radial-dc/1` model is used for actual loading projections. The backup circuit rating is 800 MW; nominal demand is 840 MW, with 62 MW of isolated Tier-3 industrial demand. Heatwave multiplies all demand by 1.2 to produce exactly 1008 MW.
-- One simulator owns state; the interceptor synchronizes it into FalkorDB before querying or acting. There is no independent MCP grid model or second scenario loop.
-- Graph evidence includes executed query, parameters, returned rows, hash, and measured query time. No fixed latency is presented as a measurement.
-- SCADA tools query current graph guards and persist intent before actuation; a caller-supplied hash alone never authorizes a trip. Only isolated Tier-3 breakers are eligible. BESS requires SOC above 40%, a positive bounded amount, and LOWER_BACKUP routing.
-- All mutating HTTP routes enforce the operator role. WebSocket connections require the login token and stream the same state as `/api/sim/state`.
-- SCADA tool adapters are available through `/api/mcp/tools/*` in OpenAPI. These HTTP adapters do not implement an MCP JSON-RPC transport.
-- SQLite records intent, results, failed/rejected actions, trace evidence, and post-action Tier-1 verification. Storage is append-only at the application level, not tamper-proof.
-- The landing page's original canvas and theme implementation is unchanged.
+## MCP transport
 
-This is a simplified educational model. It does not provide validated AC power flow, thermal collapse timing, or physical SCADA actuation.
+The supplied project specification explicitly describes Model Context Protocol SCADA tools. No separate hackathon judging rubric was supplied, so an organizer requirement cannot be established from the repository. HTTP routes named `/api/mcp/tools/*` alone are not an MCP transport.
 
-## Verification
+`backend/mcp/transport.py` now supplies genuine **MCP JSON-RPC over stdio**, using the official Python SDK pinned to 1.30.0. An MCP client can initialize, discover schemas and call all four documented tools. The bridge imports no simulator or graph state; it sends requests to the running app, preserving the same roles, graph guards, locking and audits. The dashboard's deterministic interceptor remains an in-process caller of those shared functions; it does not use an LLM or send its internal calls over MCP.
+
+Configure an MCP client's stdio server command as the absolute path to this repository's `.venv/bin/python`, with arguments `-m backend.mcp.transport`, working directory set to this repository, and these environment variables:
+
+```text
+GRIDPULSE_API_URL=http://127.0.0.1:8000
+GRIDPULSE_MCP_TOKEN=<access_token returned by POST /api/auth/login>
+```
+
+A token can be obtained with `POST /api/auth/login` and JSON `{"demo":true,"role":"operator"}`. Keep it out of committed client config. Relogin and replace the token after backend restart. There is **no HTTP Streamable MCP/SSE endpoint**, OAuth flow, or autonomous LLM agent.
+
+## Verified results — 15 October 2026
 
 ```sh
-pytest -q
-# Require a real FalkorDB connection rather than skipping database checks:
-GRIDPULSE_REQUIRE_FALKORDB=1 pytest backend/graph/tests -q
+# Database port for this machine's integration stack:
+FALKORDB_PORT=6380 GRIDPULSE_REQUIRE_FALKORDB=1 .venv/bin/python -m pytest -q
+# Require real database tests; do not allow connection-based skips:
+FALKORDB_PORT=6380 GRIDPULSE_REQUIRE_FALKORDB=1 .venv/bin/python -m pytest backend/graph/tests -q
 ```
 
-`backend/graph/tests` includes real database seeding/query checks plus pure model tests. App and SCADA regression tests explicitly substitute graph fixtures and test HTTP/auth/WebSocket contracts, the actual radial model, all three scenario pipelines, duplicate triggers, cancellation, missing graph evidence, battery guards, and audit persistence. Fixture timings are test inputs, never database measurements.
+**69 passed, zero skipped** overall. The required graph suite: **42 passed, zero skipped**. Both report one upstream Starlette/httpx TestClient deprecation warning. The graph suite includes pure model tests as well as real Cypher tests. `backend/mcp/test_live_runtime.py` adds seven real-database app/runtime tests with isolated graph names and audit files; it does not substitute graph answers. Other app/SCADA fixture tests remain explicitly labelled as fixtures.
 
-Integration-session verification: 30 tests passed, 30 live database tests skipped because this restricted session cannot access Docker or install the missing FalkorDB SDK. JavaScript syntax checks passed. Binding a local HTTP port is also blocked in this session, so browser-to-live-database verification must be completed after starting Docker Compose on the host.
+Live database coverage includes repeated seeding, graph traversal, all three complete scenario pipelines, evidence hashes, Tier-1 protection, operator/read-only HTTP and WebSocket behavior, duplicate/conflicting triggers, reset cancellation, insufficient battery capacity, rejected hospital trips, repeatable battery setpoints and projected state synchronization. Partial confirmation and audit-write failures have additional fault-injection regression tests.
+
+Two separately executed acceptance checks are committed:
+
+```sh
+# Resets this demo, restarts its backend, and stops/starts its database.
+# Requires Docker access; preserves audit history and leaves the grid nominal.
+.venv/bin/python tests/verify_running_stack.py
+
+# Requires Node + Playwright Chromium; can be run against the current app.
+npm install --prefix work/browser playwright@1.64.1
+PLAYWRIGHT_BROWSERS_PATH="$PWD/work/browsers" work/browser/node_modules/.bin/playwright install chromium
+NODE_PATH="$PWD/work/browser/node_modules" PLAYWRIGHT_BROWSERS_PATH="$PWD/work/browsers" node tests/browser.cjs
+```
+
+The running-stack check passed actual MCP stdio initialize/list/query/dispatch and permission rejections; audit persistence across a real backend process restart; an actual stopped FalkorDB returning 503 without fault injection or actuation; continued landing-page availability; and dependency recovery/reset.
+
+Browser acceptance passed landing→demo login→dashboard→lightning→real graph evidence→mitigation→audit→reset, wildfire, exact 120%/1008 MW heatwave telemetry, both themes, 1440px desktop and 390px narrow layouts, canonical span mapping, live fault/reroute styling, reset during a run, WebSocket reconnect, offline action isolation, and both read-only roles. The check also covers retry after a failed topology load and an expired session. No JavaScript page errors occurred. Verification used headless Chromium in `mcr.microsoft.com/playwright:v1.64.1-noble` because the local macOS browser process was blocked by the sandbox; Safari and Firefox were not tested.
+
+Python compilation, JavaScript syntax and `git diff --check` passed. The landing HTML, its animation script, and shared specification are unchanged from integration commit `093c2ee`. The original contributor checkout remains untouched. No push, main merge or external deployment was performed.
+
+## Remaining limitations
+
+This is a deterministic educational radial model, not validated AC power flow, thermal protection timing, physical SCADA, production authentication or NERC certification. The preserved landing narrative includes illustrative benchmark/timing claims; these are not results from this verification. Fonts and the landing Tailwind enhancement use external CDNs; existing fallback styles remain in place. SQLite is append-only through application APIs, not tamper-proof, and SQLite/graph/simulator updates are not a distributed transaction. Process restart restores nominal state rather than resuming a run; unresolved crash-time intents require inspection. Demo tokens have no production expiry/revocation service. MCP is a stdio bridge and requires the app plus a valid session. No environment blocker remains for the verified Compose/Chromium workflow.

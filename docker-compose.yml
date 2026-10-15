@@ -1,8 +1,8 @@
 services:
   falkordb:
-    image: falkordb/falkordb:latest
+    image: falkordb/falkordb@sha256:107455e862a824e45e8e9f5a7fbfdf5e00a08b14e13eae2577c72fd9e3f59ba6
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${FALKORDB_HOST_PORT:-6379}:6379"
     volumes:
       - falkordb_data:/data
     healthcheck:

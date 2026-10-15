@@ -99,7 +99,7 @@ async def trip_breaker(
     """
     try:
         async with grid_simulator._lock:
-            return server.scada_trip_breaker(req.breaker_id, req.reason, req.cypher_audit_hash)
+            return server.scada_trip_breaker(req.breaker_id, req.reason, req.cypher_audit_hash, operator_id=session.operator_id)
     except PermissionError as pe:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -123,7 +123,7 @@ async def dispatch_bess(
     """
     try:
         async with grid_simulator._lock:
-            return server.scada_dispatch_bess(req.bess_id, req.inject_mw, req.target_circuit)
+            return server.scada_dispatch_bess(req.bess_id, req.inject_mw, req.target_circuit, operator_id=session.operator_id)
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

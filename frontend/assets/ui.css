@@ -7,3 +7,5 @@
 .dashboard-grid>div,.right-stack>section,.panel{min-width:0}.mobile-only{display:none}
 @media(max-width:600px){.mobile-only{display:inline-flex}.dashboard-grid,.right-stack{grid-template-columns:minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+/* Keep real multi-query evidence scrollable beside the live topology and audit. */
+.dashboard-grid{align-items:start}.right-stack{align-content:start}#query-code{max-height:320px;overflow:auto}

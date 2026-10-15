@@ -1,6 +1,6 @@
 """Authenticated SCADA tools and aliases into the single simulator pipeline."""
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from backend.auth.router import require_role, SESSIONS
+from backend.auth.router import require_role, SESSIONS, verify_operator_token
 from backend.simulator.grid_sim import grid_simulator as sim
 from backend.mcp.schemas import BlastRadiusRequest, TripBreakerRequest, DispatchBessRequest
 from backend.mcp import server
@@ -45,13 +45,13 @@ async def reset(session=Depends(operator)):
 
 
 @router.post('/api/mcp/tools/falkordb_trace_blast_radius')
-async def trace(req: BlastRadiusRequest):
+async def trace(req: BlastRadiusRequest, session=Depends(verify_operator_token)):
     async with sim._lock:
         return server.falkordb_trace_blast_radius(req.origin_node_id, req.max_hops)
 
 
 @router.post('/api/mcp/tools/falkordb_find_mitigation_assets')
-async def assets(substation_id: str = 'SUB_METRO', required_mw: float = 0):
+async def assets(substation_id: str = 'SUB_METRO', required_mw: float = 0, session=Depends(verify_operator_token)):
     async with sim._lock:
         return server.falkordb_find_mitigation_assets(substation_id, required_mw)
 
@@ -60,7 +60,7 @@ async def assets(substation_id: str = 'SUB_METRO', required_mw: float = 0):
 async def trip(req: TripBreakerRequest, session=Depends(operator)):
     async with sim._lock:
         try:
-            return server.scada_trip_breaker(req.breaker_id, req.reason_code, req.cypher_audit_hash)
+            return server.scada_trip_breaker(req.breaker_id, req.reason_code, req.cypher_audit_hash, operator_id=session.operator_id)
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
 
@@ -69,6 +69,6 @@ async def trip(req: TripBreakerRequest, session=Depends(operator)):
 async def dispatch(req: DispatchBessRequest, session=Depends(operator)):
     async with sim._lock:
         try:
-            return server.scada_dispatch_bess(req.bess_id, req.inject_mw, req.target_circuit)
+            return server.scada_dispatch_bess(req.bess_id, req.inject_mw, req.target_circuit, operator_id=session.operator_id)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc

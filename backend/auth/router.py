@@ -42,17 +42,6 @@ class OperatorSession(BaseModel):
     is_demo: bool
 
 
-# Pre-seed a default demo session for convenience
-DEFAULT_DEMO_TOKEN = "gp-demo-nerc-session-token"
-SESSIONS[DEFAULT_DEMO_TOKEN] = OperatorSession(
-    token=DEFAULT_DEMO_TOKEN,
-    operator_id="OP_NERC_772",
-    role="NERC_OPERATOR",
-    session_badge="NERC-CIP-005-EVALUATION",
-    is_demo=True
-)
-
-
 @auth_router.post("/login", response_model=LoginResponse)
 def login(req: LoginRequest):
     """
@@ -143,3 +132,9 @@ def require_role(allowed_roles: list[str]):
             )
         return session
     return role_checker
+
+
+@auth_router.get('/session')
+def session_info(session: OperatorSession = Depends(verify_operator_token)):
+    """Validate an in-memory demo session without returning its token."""
+    return session.model_dump(exclude={'token'})

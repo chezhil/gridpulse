@@ -56,3 +56,33 @@ def test_trace_failure_during_run_no_mutation(runtime,monkeypatch):
         assert sim._consumers['IND_METRO_12']['energized']
         assert sim._bess['active_injection_mw']==0
     asyncio.run(check())
+
+
+def test_applied_action_with_lost_confirmation_is_recorded(runtime, monkeypatch):
+    sim, store = runtime
+    original = graph.apply_state_update
+    calls = 0
+    def update(data):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise graph.GraphUnavailableError('confirmation lost')
+        return original(data)
+    monkeypatch.setattr(graph, 'apply_state_update', update)
+    with pytest.raises(graph.GraphUnavailableError):
+        server.scada_trip_breaker('BRK_IND_12', 'test', operator_id='OP_TEST')
+    failure = store.query_logs()[0]
+    assert failure['outcome'] == 'FAILED'
+    assert failure['evidence']['state_changed'] is True
+    assert failure['evidence']['intent_id']
+    assert failure['evidence']['applied_result']['status'] == 'OPEN'
+    assert failure['operator_id'] == 'OP_TEST'
+    assert sim._scenario_status == 'FAILED'
+
+
+def test_completion_hash_covers_returned_evidence(runtime):
+    sim, store = runtime
+    result = server.scada_dispatch_bess('BESS_METRO_01', 45)
+    assert result['evidence_hash'] == store.calculate_evidence_hash(result['evidence'])
+    assert result['evidence']['intent_id']
+    assert result['evidence']['post_action_trace']

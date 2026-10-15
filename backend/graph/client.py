@@ -162,6 +162,9 @@ class GraphClient:
                     port=self.settings.port,
                     username=self.settings.username,
                     password=self.settings.password,
+                    socket_connect_timeout=1.0,
+                    socket_timeout=max(1.0, self.settings.query_timeout_ms / 1000 + 0.5),
+                    retry=redis.retry.Retry(redis.backoff.NoBackoff(), 0),
                 )
                 db.connection.ping()
                 with self._lock:

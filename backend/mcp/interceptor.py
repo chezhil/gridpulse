@@ -18,6 +18,7 @@ class GridPulseInterceptor:
                 if sim._run_id != run_id:
                     return
                 sim.inject_fault(scenario_id)
+                server.sync()
             await asyncio.sleep(0.25)
             async with sim._lock:
                 if sim._run_id != run_id:
