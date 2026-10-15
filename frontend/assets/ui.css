@@ -7,3 +7,44 @@
 .dashboard-grid>div,.right-stack>section,.panel{min-width:0}.mobile-only{display:none}
 @media(max-width:600px){.mobile-only{display:inline-flex}.dashboard-grid,.right-stack{grid-template-columns:minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* Focused console pages and the shared feature menu. */
+.app-shell{display:block}
+.workspace{min-width:0}
+.sidebar{display:flex!important;position:fixed;inset:0 auto 0 0;width:min(300px,86vw);z-index:102;transform:translateX(-105%);transition:transform .22s ease;box-shadow:var(--shadow);overflow-y:auto;background:var(--bg)}
+.menu-open .sidebar{transform:translateX(0)}
+.menu-backdrop{position:fixed;inset:0;background:rgba(1,6,18,.7);z-index:101;opacity:0;visibility:hidden;transition:opacity .22s,visibility .22s}
+.menu-open .menu-backdrop{opacity:1;visibility:visible}
+.menu-open{overflow:hidden}
+.menu-close{position:absolute;top:21px;right:18px;padding:7px 10px}
+.sidebar .nav-label,.sidebar .brand>span:last-child,.sidebar-caption,.sidebar .sidebar-bottom .small{display:initial}
+.sidebar .operator-card{display:block}
+.sidebar .brand{justify-content:flex-start}
+.sidebar .nav-list a{justify-content:flex-start;min-height:45px;align-items:center;font-size:13px}
+.sidebar .sidebar-bottom .btn{padding:11px 16px;font-size:11px}
+.command-title-group{display:flex;align-items:center;gap:17px;min-width:0}
+.menu-toggle{padding:9px 12px;flex-shrink:0;font-size:11px}
+.hamburger-bars{width:18px;display:grid;gap:3px}
+.hamburger-bars i{display:block;width:18px;height:2px;border-radius:2px;background:currentColor}
+.content{max-width:1520px}
+.page-heading h2{font-size:clamp(25px,2.5vw,34px)}
+.page-heading p{font-size:13px;line-height:1.5}
+.panel-head h3{font-size:15px}
+.panel-head p,.node-details p,.metric .foot,.scenario-btn small,.query-note,.audit-entry{font-size:11px}
+.scenario-btn strong,.node-details strong{font-size:13px}
+.scenario-btn{min-height:112px}
+.nav-list a.active{font-weight:600}
+body[data-view="overview"] .scenario-panel,body[data-view="overview"] .right-stack{display:none}
+body[data-view="overview"] .dashboard-grid{grid-template-columns:minmax(0,1fr)}
+body[data-view="scenarios"] .primary-stack>.panel:first-child,body[data-view="scenarios"] .right-stack{display:none}
+body[data-view="scenarios"] .dashboard-grid{grid-template-columns:minmax(0,1fr)}
+body[data-view="scenarios"] .scenario-panel{margin-top:0}
+body[data-view="diagnostics"] .metrics,body[data-view="diagnostics"] .scenario-panel,body[data-view="diagnostics"] #audit-panel{display:none}
+body[data-view="audit"] .metrics,body[data-view="audit"] .primary-stack,body[data-view="audit"] #query-panel{display:none}
+body[data-view="audit"] .dashboard-grid{grid-template-columns:minmax(0,1fr)}
+body[data-view="audit"] .right-stack{grid-template-columns:minmax(0,1fr)}
+body[data-view="audit"] .audit-list{max-height:none;min-height:260px}
+body[data-view="audit"] .audit-entry{font-size:13px;padding:17px 0}
+body[data-view="diagnostics"] #query-code{font-size:12px;min-height:300px}
+@media(max-width:950px){body[data-view="diagnostics"] .dashboard-grid{grid-template-columns:minmax(0,1fr)}body[data-view="diagnostics"] .right-stack{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.command-title-group{gap:10px}.command-bar h1{font-size:15px}.menu-toggle span:last-child{display:none}.menu-toggle{padding:10px}.command-actions{gap:6px}.command-actions .btn{padding:8px}.sidebar .operator-card,.sidebar .sidebar-bottom .small{display:block}.sidebar .nav-label{display:inline}.page-heading{align-items:flex-start}.page-heading p{font-size:12px}.scenario-btn{min-height:72px}.topology-svg{min-width:900px}}

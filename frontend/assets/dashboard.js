@@ -1,6 +1,37 @@
 (() => {
   'use strict';
   const API='http://localhost:8000', WS='ws://localhost:8000/ws/telemetry', $=id=>document.getElementById(id);
+  const pages={
+    'dashboard.html':{view:'overview',title:'Grid overview',heading:'Your grid. Every connection.',description:'See corridor health and inspect connected assets.'},
+    'scenarios.html':{view:'scenarios',title:'Scenario lab',heading:'Practice the response.',description:'Run a fault scenario and follow the grid response step by step.'},
+    'diagnostics.html':{view:'diagnostics',title:'Graph diagnostics',heading:'Trace the impact.',description:'Select an asset, inspect its neighbors, and review the Cypher trace.'},
+    'audit.html':{view:'audit',title:'Action audit',heading:'Review every action.',description:'Inspect the recorded sequence, evidence, and outcomes.'}
+  };
+  const pageForPath=()=>pages[location.pathname.split('/').pop()]||pages['dashboard.html'];
+  function showPage(){
+    const page=pageForPath();document.body.dataset.view=page.view;
+    document.title=`${page.title} · GridPulse`;
+    $('command-title').textContent=page.title;$('page-title').textContent=page.heading;$('page-description').textContent=page.description;
+    document.querySelectorAll('[data-console-page]').forEach(link=>{
+      const active=link.getAttribute('href')===location.pathname.split('/').pop();
+      link.classList.toggle('active',active);
+      if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
+    });
+    closeMenu();
+  }
+  function closeMenu(){document.body.classList.remove('menu-open');$('menu-toggle').setAttribute('aria-expanded','false');$('sidebar').inert=true;}
+  $('menu-toggle').addEventListener('click',()=>{
+    const open=document.body.classList.toggle('menu-open');$('menu-toggle').setAttribute('aria-expanded',String(open));$('sidebar').inert=!open;
+    if(open)$('menu-close').focus();
+  });
+  $('menu-close').addEventListener('click',()=>{$('menu-toggle').focus();closeMenu();});
+  $('menu-backdrop').addEventListener('click',closeMenu);
+  addEventListener('keydown',event=>{if(event.key==='Escape')closeMenu();});
+  document.querySelectorAll('[data-console-page]').forEach(link=>link.addEventListener('click',event=>{
+    if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+    event.preventDefault();history.pushState({},'',link.getAttribute('href'));showPage();window.scrollTo(0,0);
+  }));
+  addEventListener('popstate',showPage);showPage();
   let session;try{session=JSON.parse(localStorage.getItem('gridpulse_session'));}catch{}
   if(!session || !['operator','engineer','auditor'].includes(session.role) || !session.expiresAt || session.expiresAt<Date.now()){location.replace('login.html');return;}
   const roleNames={operator:'Chief Grid Operator',engineer:'Topology Engineer',auditor:'Compliance Auditor'};
