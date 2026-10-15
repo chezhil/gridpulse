@@ -1533,77 +1533,6 @@ RETURN path, sub.capacity_mw;</pre>
             ctx.restore();
         }
 
-        // Visible rotating runner and generator at the waterfall outflow.
-        function drawHydroTurbine(camX) {
-            if (camX > 1450) return;
-            const tx = 370;
-            const ty = 924;
-            ctx.save();
-
-            // Short penstock and the generator housing anchor the wheel to the fall.
-            ctx.strokeStyle = lerpRGB([53, 79, 91], [15, 32, 47], nightMix);
-            ctx.lineWidth = 12;
-            ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(331, 874);
-            ctx.quadraticCurveTo(343, 895, tx - 8, ty - 22);
-            ctx.stroke();
-            ctx.fillStyle = lerpRGB([46, 70, 82], [9, 23, 39], nightMix);
-            ctx.beginPath();
-            ctx.roundRect(tx - 43, ty - 38, 87, 76, 14);
-            ctx.fill();
-            ctx.strokeStyle = lerpRGBA([167, 203, 214], [81, 138, 161], nightMix, 0.82);
-            ctx.lineWidth = 3;
-            ctx.stroke();
-
-            // The six broad blades turn continuously as water passes through.
-            ctx.save();
-            ctx.translate(tx, ty);
-            ctx.rotate(animTime * 2.7);
-            for (let blade = 0; blade < 6; blade++) {
-                ctx.rotate(Math.PI / 3);
-                ctx.fillStyle = lerpRGB([101, 205, 230], [33, 142, 184], nightMix);
-                ctx.beginPath();
-                ctx.moveTo(4, -5);
-                ctx.quadraticCurveTo(15, -17, 26, -12);
-                ctx.lineTo(27, 0);
-                ctx.quadraticCurveTo(15, -2, 5, 5);
-                ctx.closePath();
-                ctx.fill();
-            }
-            ctx.restore();
-            ctx.strokeStyle = lerpRGB([190, 236, 248], [85, 194, 226], nightMix);
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.arc(tx, ty, 29, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.fillStyle = lerpRGB([250, 251, 232], [127, 232, 247], nightMix);
-            ctx.beginPath();
-            ctx.arc(tx, ty, 5.5, 0, Math.PI * 2);
-            ctx.fill();
-
-            // A pulsing conductor links generation to the first transmission tower.
-            ctx.strokeStyle = lerpRGBA([32, 147, 192], [57, 198, 242], nightMix, 0.78);
-            ctx.lineWidth = 2.6;
-            ctx.beginPath();
-            ctx.moveTo(tx + 42, ty - 27);
-            ctx.bezierCurveTo(443, 874, 485, 842, 520, 843);
-            ctx.stroke();
-            const pulse = (animTime * 0.38) % 1;
-            const px = Math.pow(1 - pulse, 3) * (tx + 42) + 3 * Math.pow(1 - pulse, 2) * pulse * 443
-                + 3 * (1 - pulse) * pulse * pulse * 485 + Math.pow(pulse, 3) * 520;
-            const py = Math.pow(1 - pulse, 3) * (ty - 27) + 3 * Math.pow(1 - pulse, 2) * pulse * 874
-                + 3 * (1 - pulse) * pulse * pulse * 842 + Math.pow(pulse, 3) * 843;
-            ctx.fillStyle = '#72f2ff';
-            ctx.beginPath();
-            ctx.arc(px, py, 4, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.font = '600 13px "JetBrains Mono", monospace';
-            ctx.fillStyle = lerpRGB([3, 60, 91], [177, 238, 252], nightMix);
-            ctx.fillText('HYDRO GENERATOR', tx - 58, ty + 58);
-            ctx.restore();
-        }
-
         // Renders gabled cabins, village cottages, and suburban houses that appear as we approach the city
         function drawTransitionalHouses(camX) {
             const corridorProgress = Math.min(1, smoothScrollProgress / 0.74);
@@ -1943,8 +1872,6 @@ RETURN path, sub.capacity_mw;</pre>
                 ctx.stroke();
             }
             ctx.restore();
-
-            drawHydroTurbine(camX);
 
             // Autonomous river boat cruising continuously in the middle valley corridor (irrespective of scroll)
             drawMiddleRiverBoat(camX);
