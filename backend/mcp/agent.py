@@ -155,8 +155,11 @@ def make_client():
         import groq
     except ImportError as exc:
         raise AgentUnavailable('groq SDK not installed; install backend/requirements.txt') from exc
+    key = os.environ.get('GROQ_API_KEY', '').strip()
+    if not key:  # compose passes an empty string when .env has no key
+        raise AgentUnavailable('No Groq credentials configured; set GROQ_API_KEY')
     try:
-        return groq.Groq()
+        return groq.Groq(api_key=key)
     except groq.GroqError as exc:
         raise AgentUnavailable('No Groq credentials configured; set GROQ_API_KEY') from exc
 

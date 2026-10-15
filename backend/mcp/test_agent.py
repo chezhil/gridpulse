@@ -127,3 +127,6 @@ def test_missing_credentials_are_reported_as_unavailable(monkeypatch):
     monkeypatch.delenv('GROQ_API_KEY', raising=False)
     with pytest.raises(agent.AgentUnavailable):
         agent.make_client()
+    monkeypatch.setenv('GROQ_API_KEY', '   ')
+    with pytest.raises(agent.AgentUnavailable):
+        agent.make_client()
