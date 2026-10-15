@@ -152,3 +152,18 @@ def test_simulate_rejects_bad_cases(reg, live_client):
     from graph.client import GraphDataError
     with pytest.raises(GraphDataError):
         nw.simulate(owner, nid, [{"trip": [{"span_id": "NOPE"}]}], base=live_client)
+
+
+def test_ieee118_matches_pandapower_reference():
+    """GridPulse's dc-pf/1 flows on the public IEEE 118-bus case vs pandapower rundcpp (stored reference)."""
+    import json
+    from pathlib import Path
+
+    from graph.thermal import project_loading
+    data = json.loads((Path(nw.__file__).parent / "data" / "ieee118.json").read_text())
+    p = project_loading(nw.snapshot_from_spec(data["spec"]))
+    assert p["outcome"] == "WITHIN_LIMITS"
+    ours = {c["span_id"]: c["flow_mw"] * (-1 if c["direction"] == "REVERSE" else 1) for c in p["circuits"]}
+    assert len(data["reference_flows_mw"]) == 186
+    for branch, ref in data["reference_flows_mw"].items():
+        assert ours[branch] == pytest.approx(ref, abs=0.01), branch

@@ -29,7 +29,7 @@ def test_network_lifecycle_over_http(api):
     alice, bob = login(api, "ALICE_HTTP"), login(api, "BOB_HTTP")
     assert api.get("/api/networks").status_code == 401
     templates = api.get("/api/networks/templates").json()["templates"]
-    assert {t["id"] for t in templates} == {"demo_corridor", "ring", "meshed_city"}
+    assert {t["id"] for t in templates} == {"demo_corridor", "ring", "meshed_city", "ieee118"}
 
     bad = api.post("/api/networks/validate", headers=alice, json={"spec": {"generators": []}})
     assert bad.status_code == 422 and bad.json()["detail"]["code"] == "INVALID_REQUEST"

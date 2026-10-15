@@ -501,7 +501,13 @@ def _meshed_template() -> Dict[str, Any]:
     }
 
 
-TEMPLATES = {"demo_corridor": _demo_template, "ring": _ring_template, "meshed_city": _meshed_template}
+def _ieee118_template() -> Dict[str, Any]:
+    from pathlib import Path
+    return json.loads((Path(__file__).parent / "data" / "ieee118.json").read_text())["spec"]
+
+
+TEMPLATES = {"demo_corridor": _demo_template, "ring": _ring_template, "meshed_city": _meshed_template,
+             "ieee118": _ieee118_template}
 
 
 def list_templates() -> Dict[str, Any]:
@@ -581,31 +587,56 @@ def suggest_mitigation(snapshot: Dict[str, Any], trips: List[Tuple[str, str]], o
         return project_loading(snapshot, trips, threshold_pct, ov)
 
     current = base
-    for b in sorted(snapshot["bess"], key=lambda b: -float(b.get("max_discharge_mw") or 0)):
-        if current["outcome"] == "WITHIN_LIMITS" or current["outcome"] == "ISLANDING_PREDICTED":
-            break
-        if b.get("soc_pct") is None or b["soc_pct"] <= min_soc_pct or b.get("status") == "OFFLINE":
-            continue
-        need = current["required_relief_mw"] or 0.0
-        available = float(b["max_discharge_mw"]) - float(plan_bess.get(b["id"], b.get("active_injection_mw") or 0.0))
-        if available <= 0:
-            continue
-        previous = plan_bess.get(b["id"])
-        plan_bess[b["id"]] = round(float(plan_bess.get(b["id"], b.get("active_injection_mw") or 0.0)) + min(available, max(need, 1.0)), 3)
-        trial = project()
-        # Keep the battery only if it actually helps (it may sit at an insensitive substation).
-        if trial["outcome"] == "WITHIN_LIMITS" or (trial["required_relief_mw"] or 0.0) < need - 1e-6:
-            current = trial
-        elif previous is None:
-            del plan_bess[b["id"]]
-        else:
-            plan_bess[b["id"]] = previous
-    for c in _sheddable(snapshot, off):
+    threshold = threshold_pct / 100.0
+    batteries = {b["id"]: b for b in snapshot["bess"]
+                 if b.get("soc_pct") is not None and b["soc_pct"] > min_soc_pct and b.get("status") != "OFFLINE"}
+    loads = {c["id"]: c for c in _sheddable(snapshot, off)}
+
+    def excess(projection: Dict[str, Any]) -> float:
+        """Total MW above limits; the search minimises this (new overloads count too)."""
+        total = sum(max(0.0, c["flow_mw"] - threshold * c["limit_mw"]) for c in projection["circuits"])
+        total += sum(max(0.0, s["net_demand_mw"] - threshold * s["capacity_mw"]) for s in projection["substations"] if s["energized"])
+        total += sum(max(0.0, g["output_mw"] - g["capacity_mw"]) for g in projection.get("generators", []) if g.get("capacity_mw"))
+        return total
+
+    # Each round, try every remaining battery and Tier-3 load, re-solve, and keep the one that removes the most overload.
+    for _ in range(len(batteries) + len(loads)):
         if current["outcome"] != "OVERLOAD_PREDICTED":
             break
-        off.append(c["id"])
-        breakers.append(c["breaker_id"])
-        current = project()
+        now = excess(current)
+        best = None
+        for bid, b in batteries.items():
+            used = float(plan_bess.get(bid, b.get("active_injection_mw") or 0.0))
+            if float(b["max_discharge_mw"]) - used <= 0:
+                continue
+            saved = plan_bess.get(bid)
+            plan_bess[bid] = float(b["max_discharge_mw"])
+            trial = project()
+            gain = now - excess(trial)
+            if saved is None:
+                del plan_bess[bid]
+            else:
+                plan_bess[bid] = saved
+            if gain > 1e-6 and (best is None or gain > best[0]):
+                best = (gain, "bess", bid, trial)
+        for cid in loads:
+            if cid in off:
+                continue
+            off.append(cid)
+            trial = project()
+            off.pop()
+            gain = now - excess(trial)
+            if gain > 1e-6 and (best is None or gain > best[0]):
+                best = (gain, "load", cid, trial)
+        if best is None:
+            break
+        _, kind, ident, trial = best
+        if kind == "bess":
+            plan_bess[ident] = float(batteries[ident]["max_discharge_mw"])
+        else:
+            off.append(ident)
+            breakers.append(loads[ident]["breaker_id"])
+        current = trial
     if current["outcome"] == "WITHIN_LIMITS":
         # Undo any shedding that turned out to be unnecessary, smallest loads last to stay minimal.
         mw = {c["id"]: float(c["mw_demand"]) for c in snapshot["consumers"]}
@@ -641,7 +672,7 @@ def suggest_mitigation(snapshot: Dict[str, Any], trips: List[Tuple[str, str]], o
     return {
         "verdict": "SAVED" if saved else "NOT_SAVEABLE",
         "reason": None if saved else ("islanding cannot be fixed by battery or shedding" if current["outcome"] == "ISLANDING_PREDICTED"
-                                      else "safe battery support and Tier-3 shedding are not enough"),
+                                      else "safe battery support and Tier-3 shedding are not enough (would need generator redispatch or new capacity)"),
         "plan": {"bess_dispatch": plan_bess, "trip_breakers": breakers, "shed_loads": off},
         "final_outcome": current["outcome"],
         "remaining_overloads": [o["element"] for o in current["overloads"]],
@@ -706,4 +737,25 @@ def simulate(owner: str, network_id: str, cases: List[Dict[str, Any]], threshold
         },
         "evidence": [snap_q.evidence()],
         "timing": {"engine_total_ms": round((time.perf_counter() - started) * 1000.0, 3), "graph_server_ms": round(snap_q.server_ms, 4)},
+    }
+
+
+def snapshot_from_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
+    """The graph snapshot a stored network would produce, built in memory (for offline checks and tests)."""
+    normalized, _ = validate_spec(spec)
+    rows = _rows(normalized)
+    circuits = [{"span_id": r["props"]["id"], "circuit": r["props"]["circuit"], "rel_type": r["rel"], "src": r["src"], "dst": r["dst"],
+                 **{k: v for k, v in r["props"].items() if k not in ("id", "circuit")}} for r in rows["_circuits"]]
+    plants = {g["id"]: g for g in normalized["generators"]}
+    return {
+        "circuits": circuits,
+        "feeds": [{"src": f["src"], "dst": f["dst"], "output_mw": plants[f["src"]]["output_mw"],
+                   "capacity_mw": plants[f["src"]]["capacity_mw"]} for f in rows["_feeds"]],
+        "substations": [{"id": s["id"], "capacity_mw": s["capacity_mw"], "status": "ONLINE"} for s in normalized["substations"]],
+        "consumers": [{"id": c["id"], "substation_id": c["substation"], "feeder_id": c["feeder_id"], "name": c["name"],
+                       "category": c["category"], "priority_tier": c["priority_tier"], "mw_demand": c["mw_demand"],
+                       "breaker_id": c["breaker_id"], "energized": True} for c in normalized["loads"]],
+        "bess": [{"id": b["id"], "substation_id": b["substation"], "soc_pct": b["soc_pct"], "max_discharge_mw": b["max_discharge_mw"],
+                  "active_injection_mw": 0.0, "status": "STANDBY"} for b in normalized["batteries"]],
+        "state_version": 0,
     }
