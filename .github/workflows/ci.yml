@@ -24,8 +24,8 @@ jobs:
       FALKORDB_HOST: localhost
       FALKORDB_PORT: "6379"
       GRIDPULSE_REQUIRE_FALKORDB: "1"
-      GRIDPULSE_AUDIT_DB: ${{ runner.temp }}/audit_log.db
-      GRIDPULSE_BENCH_DIR: ${{ runner.temp }}/bench
+      GRIDPULSE_AUDIT_DB: /tmp/gridpulse/audit_log.db
+      GRIDPULSE_BENCH_DIR: /tmp/gridpulse/bench
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
