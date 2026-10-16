@@ -55,16 +55,21 @@
   });
 
   // ---------------- graph rendering ----------------
+  const icon = window.GridPulseIcons.cytoscapeStyle;
   const STYLE = [
-    { selector: 'node', style: { label: 'data(label)', color: '#cbd5e1', 'font-size': 9, 'text-valign': 'bottom', 'text-margin-y': 3, 'background-color': '#38bdf8', width: 14, height: 14 } },
-    { selector: 'node.HydroPlant', style: { shape: 'round-triangle', 'background-color': '#22d3ee', width: 22, height: 22 } },
-    { selector: 'node.Tower', style: { shape: 'diamond', 'background-color': '#94a3b8', width: 12, height: 12 } },
-    { selector: 'node.Substation', style: { shape: 'round-rectangle', 'background-color': '#0ea5e9', width: 20, height: 20 } },
-    { selector: 'node.BESS', style: { shape: 'barrel', 'background-color': '#10b981', width: 16, height: 16 } },
-    { selector: 'node.Consumer', style: { shape: 'ellipse', 'background-color': '#64748b', width: 11, height: 11, 'font-size': 8 } },
-    { selector: 'node.tier1', style: { 'background-color': '#a855f7', width: 15, height: 15 } },
-    { selector: 'node.tier3', style: { 'background-color': '#f59e0b' } },
-    { selector: 'node.off', style: { 'background-color': '#334155', 'border-width': 2, 'border-color': '#f59e0b' } },
+    { selector: 'node', style: { label: 'data(label)', color: '#cbd5e1', 'font-size': 10, 'font-weight': 600, 'text-valign': 'bottom', 'text-margin-y': 4, ...icon('Consumer','#94a3b8',30,30) } },
+    { selector: 'node.HydroPlant', style: icon('HydroPlant','#38bdf8',34,34) },
+    { selector: 'node.Tower', style: icon('Tower','#45caff',38,46) },
+    { selector: 'node.Substation', style: icon('Substation','#38bdf8',34,34) },
+    { selector: 'node.BESS', style: icon('BESS','#a78bfa',34,34) },
+    { selector: 'node.Consumer', style: icon('Consumer','#94a3b8',30,30) },
+    { selector: 'node.category-HOSPITAL', style: icon('HOSPITAL','#34d399',34,34) },
+    { selector: 'node.category-RESIDENTIAL', style: icon('RESIDENTIAL','#45caff',34,34) },
+    { selector: 'node.category-COMMERCIAL', style: icon('COMMERCIAL','#45caff',34,34) },
+    { selector: 'node.category-INDUSTRIAL', style: icon('INDUSTRIAL','#f59e0b',34,34) },
+    { selector: 'node.tier1', style: { 'border-width': 2, 'border-color': '#a855f7' } },
+    { selector: 'node.tier3', style: { 'border-width': 2, 'border-color': '#f59e0b' } },
+    { selector: 'node.off', style: { opacity: 0.55, 'border-width': 2, 'border-color': '#f59e0b' } },
     { selector: 'node.islanded', style: { 'border-width': 3, 'border-color': '#f59e0b' } },
     { selector: 'node.hl', style: { 'border-width': 3, 'border-color': '#fde047' } },
     { selector: 'edge', style: { width: 2, 'line-color': '#38bdf8', 'curve-style': 'bezier', 'target-arrow-shape': 'none', opacity: 0.85 } },
@@ -81,7 +86,7 @@
     const els = [];
     for (const n of topo.nodes) {
       const p = n.properties || {};
-      const cls = [n.label, p.priority_tier === 1 ? 'tier1' : '', p.priority_tier === 3 ? 'tier3' : '', p.energized === false ? 'off' : ''].join(' ');
+      const cls = [n.label, n.label === 'Consumer' ? `category-${p.category || ({1:'HOSPITAL',2:'RESIDENTIAL',3:'INDUSTRIAL'}[p.priority_tier]) || 'RESIDENTIAL'}` : '', p.priority_tier === 1 ? 'tier1' : '', p.priority_tier === 3 ? 'tier3' : '', p.energized === false ? 'off' : ''].join(' ');
       els.push({ data: { id: n.id, label: n.id, props: p, kind: n.label }, classes: cls });
     }
     for (const e of topo.edges) {

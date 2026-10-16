@@ -23,14 +23,19 @@
     lines: [['id', 'text'], ['from', 'text'], ['to', 'text'], ['impedance_pu', 'number'], ['limit_mw', 'number'], ['backup_limit_mw', 'number'], ['backup_impedance_pu', 'number']],
   };
   const ID_RE = /^[A-Z0-9_]{1,40}$/;
+  const icon = window.GridPulseIcons.cytoscapeStyle;
   const STYLE = [
-    { selector: 'node', style: { label: 'data(label)', color: '#dbeafe', 'font-size': 10, 'font-weight': 600, 'text-valign': 'bottom', 'text-margin-y': 5, width: 19, height: 19, 'background-color': '#94a3b8' } },
-    { selector: 'node.HydroPlant', style: { shape: 'round-triangle', 'background-color': '#22d3ee', width: 25, height: 25 } },
-    { selector: 'node.Tower', style: { shape: 'diamond', 'background-color': '#94a3b8' } },
-    { selector: 'node.Substation', style: { shape: 'round-rectangle', 'background-color': '#0ea5e9', width: 25, height: 25 } },
-    { selector: 'node.BESS', style: { shape: 'barrel', 'background-color': '#10b981', width: 22, height: 22 } },
-    { selector: 'node.Consumer', style: { 'background-color': '#64748b', width: 12, height: 12, 'font-size': 8 } },
-    { selector: 'node.tier1', style: { 'background-color': '#a855f7' } }, { selector: 'node.tier3', style: { 'background-color': '#f59e0b' } },
+    { selector: 'node', style: { label: 'data(label)', color: '#dbeafe', 'font-size': 10, 'font-weight': 600, 'text-valign': 'bottom', 'text-margin-y': 5, ...icon('Consumer','#94a3b8',31,31) } },
+    { selector: 'node.HydroPlant', style: icon('HydroPlant','#38bdf8',34,34) },
+    { selector: 'node.Tower', style: icon('Tower','#45caff',38,46) },
+    { selector: 'node.Substation', style: icon('Substation','#38bdf8',34,34) },
+    { selector: 'node.BESS', style: icon('BESS','#a78bfa',34,34) },
+    { selector: 'node.Consumer', style: icon('Consumer','#94a3b8',31,31) },
+    { selector: 'node.category-HOSPITAL', style: icon('HOSPITAL','#34d399',34,34) },
+    { selector: 'node.category-RESIDENTIAL', style: icon('RESIDENTIAL','#45caff',34,34) },
+    { selector: 'node.category-COMMERCIAL', style: icon('COMMERCIAL','#45caff',34,34) },
+    { selector: 'node.category-INDUSTRIAL', style: icon('INDUSTRIAL','#f59e0b',34,34) },
+    { selector: 'node.tier1', style: { 'border-width': 2, 'border-color': '#a855f7' } }, { selector: 'node.tier3', style: { 'border-width': 2, 'border-color': '#f59e0b' } },
     { selector: 'node.pending', style: { 'border-width': 3, 'border-color': '#fde047' } },
     { selector: ':selected', style: { 'border-width': 3, 'border-color': '#fde047', 'line-color': '#fde047' } },
     { selector: 'edge', style: { width: 2.5, 'line-color': '#38bdf8', 'curve-style': 'bezier', label: '' } },
@@ -71,7 +76,7 @@
       const node = (kind, e, extra = '') => els.push({ group: 'nodes', data: { id: e.id, label: e.id, kind }, classes: `${KINDS[kind].cls} ${extra}`, position: s.layout[e.id] ? { ...s.layout[e.id] } : undefined });
       s.buses.forEach((e) => node('buses', e)); s.substations.forEach((e) => node('substations', e));
       s.generators.forEach((e) => node('generators', e)); s.batteries.forEach((e) => node('batteries', e));
-      s.loads.forEach((e) => node('loads', e, e.priority_tier === 1 ? 'tier1' : e.priority_tier === 3 ? 'tier3' : ''));
+      s.loads.forEach((e) => node('loads', e, `${e.priority_tier === 1 ? 'tier1' : e.priority_tier === 3 ? 'tier3' : ''} category-${e.category || ({1:'HOSPITAL',2:'RESIDENTIAL',3:'INDUSTRIAL'}[e.priority_tier]) || 'RESIDENTIAL'}`));
       const ids = allIds();
       s.lines.forEach((l) => { if (ids.has(l.from) && ids.has(l.to)) els.push({ group: 'edges', data: { id: 'line:' + l.id, source: l.from, target: l.to, label: `${l.id} ${l.limit_mw ?? ''}`, kind: 'lines', ref: l.id }, classes: l.backup ? 'backup' : '' }); });
       s.generators.forEach((g) => { if (ids.has(g.connects_to)) els.push({ group: 'edges', data: { id: 'feed:' + g.id, source: g.id, target: g.connects_to }, classes: 'feed' }); });

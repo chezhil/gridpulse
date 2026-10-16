@@ -86,7 +86,13 @@
     say('c-kpi-hydro',number(hydro?.output_mw??hydro?.generation_mw,'MW'));
     say('load-note',`City demand · ${number(m.city_load_pct,'%')}`);say('bess-note',`BESS · ${number(data.bess?.soc_pct,'% SOC')}`);say('hospital-note','Backend telemetry');
     $('c-kpi-hospital').style.color=m.tier1_hospital_status==='PROTECTED'?'#10b981':m.tier1_hospital_status==='AT_RISK'?'#d97706':'#f43f5e';
-    say('scada-topo-heading',`${data.scenario?.name||'Grid'} · ${data.scenario?.status||'UNKNOWN'}`);
+    const readable = value => String(value||'').replace(/[_.-]+/g,' ').replace(/\s+/g,' ').trim().toLowerCase().replace(/^./,letter=>letter.toUpperCase()).replace(/\btx (\d+)/g,'TX $1');
+    const rawStatus=data.scenario?.status||'UNKNOWN';
+    const plainStatus=readable(rawStatus);
+    let scenarioName=readable(data.scenario?.name||'Live grid');
+    if(scenarioName.toLowerCase().endsWith(` ${plainStatus.toLowerCase()}`))scenarioName=scenarioName.slice(0,-plainStatus.length).trim();
+    const statusLabel={NOMINAL:'Normal operation',MITIGATED:'Risk contained',ACTIVE:'Incident active',TRIPPED:'Line tripped',UNKNOWN:'Awaiting status'}[rawStatus]||plainStatus;
+    say('scada-topo-heading',`${scenarioName} — ${statusLabel}`);
     say('console-mcp-log',data.agent_steps?.length?pretty(data.agent_steps):pretty(data.agent_log||'No agent activity.'));
     consoleScenario=data.scenario?.id||0;consoleMitigated=data.scenario?.status==='MITIGATED';
     if(topology){for(const node of topology.nodes){const fresh=[...(data.towers||[]),...(data.consumers||[]),data.bess,data.substation].find(n=>n?.id===node.id);if(fresh)Object.assign(node.properties,fresh);}for(const edge of topology.edges){const span=(data.spans||[]).find(s=>edge.id.startsWith(s.id+':'));if(span)edge.properties.status=edge.id.includes('UPPER_PRIMARY')?span.upper_status:span.lower_status;}}
@@ -153,32 +159,15 @@
     const category=node.properties?.category;
     const kind=node.label==='Consumer'?category:node.label;
     const bad=/TRIPPED|OFFLINE|FAILED|FAULT|AT_RISK/.test(node.properties?.status||'') || node.properties?.energized===false;
-    const color=bad?topoColors.down:kind==='BESS'?'#a78bfa':kind==='HOSPITAL'?'#34d399':kind==='HydroPlant'?'#38bdf8':'#45caff';
+    const color=bad?topoColors.down:kind==='Tower'?(dark?'#c5e9fa':'#0369a1'):kind==='BESS'?'#a78bfa':kind==='HOSPITAL'?'#34d399':kind==='HydroPlant'?'#38bdf8':'#45caff';
+    const tower=kind==='Tower';
     ctx.save();ctx.translate(x,y);
-    ctx.fillStyle=dark?'#0d2238':'#e0f2fe';ctx.strokeStyle=bad?'#fb7185':color;ctx.lineWidth=1.25;
-    ctx.beginPath();ctx.roundRect(-18,-18,36,36,8);ctx.fill();ctx.stroke();
-    ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=2;ctx.lineJoin='round';ctx.lineCap='round';
-    const path=(...coords)=>{ctx.beginPath();ctx.moveTo(coords[0],coords[1]);for(let i=2;i<coords.length;i+=2)ctx.lineTo(coords[i],coords[i+1]);ctx.stroke();};
-    if(kind==='Tower'){
-      path(0,-12,-8,10,8,10,0,-12);path(-5,2,5,2);path(-7,8,7,8);path(-9,-5,9,-5);path(-7,-1,7,-1);ctx.fillRect(-1,-15,2,3);
-    }else if(kind==='HydroPlant'){
-      ctx.strokeRect(-11,-8,22,18);path(-11,-3,11,-3);ctx.beginPath();ctx.arc(0,3,5,0,Math.PI*2);ctx.stroke();path(0,-2,0,8);path(-5,3,5,3);
-    }else if(kind==='Substation'){
-      ctx.strokeRect(-11,-9,22,19);ctx.strokeRect(-4,-5,8,11);path(-8,-13,-8,-9);path(8,-13,8,-9);path(-11,5,-15,5);path(11,5,15,5);
-    }else if(kind==='BESS'){
-      ctx.strokeRect(-11,-9,21,18);ctx.fillRect(10,-3,3,6);const bars=Math.max(0,Math.min(3,Math.ceil((node.properties?.soc_pct??0)/34)));for(let i=0;i<bars;i++)ctx.fillRect(-7+i*5,-5,3,10);
-    }else if(kind==='HOSPITAL'){
-      ctx.strokeRect(-10,-10,20,20);ctx.fillRect(-2,-7,4,14);ctx.fillRect(-7,-2,14,4);
-    }else if(kind==='RESIDENTIAL'){
-      path(-11,0,0,-10,11,0);path(-8,-2,-8,10,8,10,8,-2);ctx.strokeRect(-2,3,4,7);
-    }else if(kind==='COMMERCIAL'){
-      ctx.strokeRect(-10,-5,8,15);ctx.strokeRect(-1,-10,11,20);ctx.fillRect(3,-5,2,2);ctx.fillRect(3,0,2,2);ctx.fillRect(-7,0,2,2);
-    }else if(kind==='INDUSTRIAL'){
-      path(-11,9,-11,-3,-4,1,1,-3,6,1,10,-2,10,9,-11,9);path(6,-2,6,-11,9,-11,9,-2);
-    }else{ctx.beginPath();ctx.arc(0,0,7,0,Math.PI*2);ctx.stroke();}
+    ctx.fillStyle=tower?(dark?'#040814':'#f8fafc'):(dark?'#0d2238':'#e0f2fe');ctx.strokeStyle=bad?'#fb7185':color;ctx.lineWidth=1.25;
+    ctx.beginPath();ctx.roundRect(tower?-27:-18,tower?-30:-18,tower?54:36,tower?60:36,8);ctx.fill();if(!tower)ctx.stroke();
+    GridPulseIcons.draw(ctx,kind,color,tower?(compact?50:58):34);
     ctx.font=`600 ${compact?9:10}px "JetBrains Mono",monospace`;ctx.textAlign='center';ctx.textBaseline='top';ctx.fillStyle=dark?'#dbeafe':'#334155';
     const labels={HYDRO_ALPINE_01:'HYDRO',BESS_METRO_01:'BESS',SUB_METRO:'SUBSTATION',HOSP_ST_JUDE:'HOSPITAL',RES_VALLEY_SUBURBS:'HOMES',COM_METRO_CORE:'METRO',IND_METRO_12:'INDUSTRY'};
-    ctx.fillText(labels[node.id]||node.id,0,22);ctx.restore();
+    ctx.fillText(labels[node.id]||node.id,0,tower?32:22);ctx.restore();
   }
   window.gridpulseDrawTopology=(canvas,ctx)=>{
     if(!canvas||!ctx)return;const dpr=Math.min(devicePixelRatio||1,2),w=canvas.width/dpr,h=canvas.height/dpr,dark=isNightMode;

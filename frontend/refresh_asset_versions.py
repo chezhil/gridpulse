@@ -7,8 +7,8 @@ import re
 
 frontend = Path(__file__).resolve().parent
 pages = {
-    'index.html': ['design.css', 'utilities.css', 'world.js', 'app.js', 'features.js'],
-    'lab.html': ['lab-editor.js', 'lab.js'],
+    'index.html': ['design.css', 'utilities.css', 'grid-icons.js', 'world.js', 'app.js', 'features.js'],
+    'lab.html': ['grid-icons.js', 'lab-editor.js', 'lab.js'],
 }
 
 for page, assets in pages.items():
