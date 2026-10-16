@@ -151,3 +151,8 @@
 
 .integration-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end}.integration-controls label{display:flex;flex-direction:column;gap:6px;font-size:12px}.integration-controls input{background:transparent;border:1px solid #64748b;border-radius:8px;padding:8px;color:inherit;max-width:100%}.integration-controls button{background:#0369a1;color:white;padding:9px 14px;border-radius:10px}.integration-result{white-space:pre-wrap;overflow-wrap:anywhere;max-height:350px;overflow:auto;font-size:12px}button:disabled{opacity:.4;cursor:not-allowed}#console-mcp-log{white-space:pre-wrap}#view-console{overflow-x:hidden}#connection-status{overflow-wrap:anywhere} @media(max-width:640px){#view-console header{gap:4px;padding:8px;height:auto;flex-wrap:wrap}.kinetic-stat{font-size:22px}.integration-controls label{width:100%}}
 #scada-topology-canvas{min-width:800px}
+#scada-topology-view:fullscreen,#scada-topology-view.topology-expanded{width:100vw!important;height:100dvh!important;border-radius:0!important;background:#040814;z-index:1000}
+#scada-topology-view.topology-expanded{position:fixed!important;inset:0}
+body.topology-expanded-active{overflow:hidden}
+.topology-fullscreen-toggle{position:sticky;left:calc(100% - 118px);top:10px;z-index:2;display:block;width:max-content;margin:10px 10px -42px auto;padding:7px 11px;border:1px solid rgba(56,189,248,.5);border-radius:9px;background:rgba(6,20,38,.92);color:#bae6fd;font:11px "JetBrains Mono",monospace;cursor:pointer}
+.topology-fullscreen-toggle:hover,.topology-fullscreen-toggle:focus-visible{border-color:#7dd3fc;background:#075985;color:white;outline:2px solid transparent}

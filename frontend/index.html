@@ -13,7 +13,7 @@
 
 
 
-    <link rel="stylesheet" href="assets/design.css?v=807c25135655">
+    <link rel="stylesheet" href="assets/design.css?v=f484b7c657ca">
 </head>
 <body class="text-slate-100 antialiased selection:bg-sky-500 selection:text-white">
 
@@ -573,7 +573,8 @@ RETURN path, sub.capacity_mw;</pre>
                         </button>
                     </div>
                 </div>
-                <div class="relative w-full h-[420px] rounded-2xl overflow-x-auto overflow-y-hidden border border-slate-700/40 bg-slate-950/90">
+                <div id="scada-topology-view" class="relative w-full h-[420px] rounded-2xl overflow-x-auto overflow-y-hidden border border-slate-700/40 bg-slate-950/90">
+                    <button id="topology-fullscreen-toggle" type="button" aria-label="Enter topology full screen" aria-pressed="false" class="topology-fullscreen-toggle">⛶ Full screen</button>
                     <canvas id="scada-topology-canvas" class="w-full h-full block"></canvas>
                 </div>
             </div>
@@ -613,6 +614,6 @@ RETURN path, sub.capacity_mw;</pre>
         </div>
     </div>
 
-    <script src="assets/world.js?v=1c11c55f610b"></script><script src="assets/app.js?v=3c32fbd220c1"></script>
+    <script src="assets/world.js?v=1c11c55f610b"></script><script src="assets/app.js?v=dc0a8cd161c8"></script>
 </body>
 </html>

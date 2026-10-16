@@ -96,6 +96,23 @@
   $('audit-refresh').onclick=()=>guarded(loadAudit);
   $('audit-verify').onclick=()=>guarded(async()=>say('audit-result',pretty(await api('/api/audit/verify'))));
   $('audit-export').onclick=()=>guarded(async()=>{await loadAudit();const url=URL.createObjectURL(new Blob([pretty(audit)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='gridpulse-audit.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+  const topologyView=$('scada-topology-view'),fullscreenButton=$('topology-fullscreen-toggle');
+  let topologyFallbackExpanded=false;
+  function updateTopologyFullscreen(){
+    const expanded=document.fullscreenElement===topologyView||topologyFallbackExpanded;
+    fullscreenButton.textContent=expanded?'↙ Exit full screen':'⛶ Full screen';
+    fullscreenButton.setAttribute('aria-label',expanded?'Exit topology full screen':'Enter topology full screen');
+    fullscreenButton.setAttribute('aria-pressed',String(expanded));
+    requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));
+  }
+  fullscreenButton.addEventListener('click',async()=>{
+    if(document.fullscreenElement===topologyView){await document.exitFullscreen();return;}
+    if(topologyFallbackExpanded){topologyFallbackExpanded=false;topologyView.classList.remove('topology-expanded');document.body.classList.remove('topology-expanded-active');updateTopologyFullscreen();return;}
+    try{await topologyView.requestFullscreen();}
+    catch{topologyFallbackExpanded=true;topologyView.classList.add('topology-expanded');document.body.classList.add('topology-expanded-active');updateTopologyFullscreen();}
+  });
+  document.addEventListener('fullscreenchange',updateTopologyFullscreen);
+  document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(document.fullscreenElement===topologyView){document.exitFullscreen();return;}if(topologyFallbackExpanded){topologyFallbackExpanded=false;topologyView.classList.remove('topology-expanded');document.body.classList.remove('topology-expanded-active');updateTopologyFullscreen();}});
   const topoColors={line:'#0ea5e9',flow:'#72f7ff',down:'#f43f5e',node:'#34d399'};
   function topologyLayout(nodes,w,h){
     const compact=w<900, left=compact?50:72, corridorEnd=w*.69;
