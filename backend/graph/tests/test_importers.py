@@ -79,3 +79,8 @@ def test_convert_gridpulse_json_and_bad_format():
         importers.convert("cim", "...")
     with pytest.raises(InvalidRequestError):
         importers.convert("matpower", TINY, options={"tier1_buses": ["a"]})
+
+
+def test_imported_case_keeps_its_name():
+    out = importers.convert("matpower", sample_file("ieee14"), "My IEEE 14")
+    assert out["spec"]["name"] == "My IEEE 14"

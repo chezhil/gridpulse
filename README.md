@@ -183,6 +183,25 @@ Without `GROQ_API_KEY`, everything works except the LLM agent, and AI-operator m
 
 Groq-backed features share a per-hour and per-user budget (`GRIDPULSE_AI_PER_HOUR`, `GRIDPULSE_AI_PER_USER_10MIN`), so a public demo can't exhaust the key. Set `GRIDPULSE_AI_ENABLED=0` to switch them off. AI-operator mode then falls back to the deterministic pipeline.
 
+### Showcase data
+
+Four fictional demo grids ship as templates, each showing a different behaviour (`backend/graph/showcase.py`):
+
+| Template | What it shows |
+| --- | --- |
+| Harbor City metro | Meshed 9-bus city with gas and offshore wind; most single-line losses are saved by battery support plus Tier-3 shedding, a few are not. |
+| Cascade Valley hydro | Double-circuit hydro valley; losing the radial Summit spur islands a clinic, which no battery or shedding can fix. |
+| Sunridge solar microgrid | Solar ring microgrid; losing a ring segment next to the grid tie is saved by shedding the bus depot. |
+| Riverside industrial park | Industrial corridor where shedding a 280 MW smelter relieves the overload. |
+
+To fill a running site with demo data, run the seeder against it:
+
+```bash
+python scripts/seed_showcase.py --base https://<your-app>
+```
+
+The seeder saves the four grids and an imported IEEE 30-bus case for every one-click demo login (operator, engineer and auditor) and for the Lab's default user. It then rehearses each grid so its memory holds incidents and playbooks, runs every live scenario twice, records one refused hospital-breaker trip, and leaves the grid nominal. It makes no AI calls, and re-running it replaces the earlier copies.
+
 ## AI assistance disclosure (Rule 11)
 
 This project was built with AI coding assistants: **Claude Code** (graph engine, MCP layer, Lab UI), **Codex** (frontend) and **Antigravity** (simulator, auth, audit, infrastructure). Each team member directed the work on their own module. Assistant-written code is covered by the test suite and CI described above.

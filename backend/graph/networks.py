@@ -556,7 +556,9 @@ def _ieee_template(n: int):
     return lambda: json.loads((DATA_DIR / f"ieee{n}.json").read_text())["spec"]
 
 
-TEMPLATES = {"demo_corridor": _demo_template, "ring": _ring_template, "meshed_city": _meshed_template,
+from .showcase import SHOWCASE  # noqa: E402  (fictional demo grids, see showcase.py)
+
+TEMPLATES = {"demo_corridor": _demo_template, **SHOWCASE, "ring": _ring_template, "meshed_city": _meshed_template,
              "ieee14": _ieee_template(14), "ieee30": _ieee_template(30), "ieee118": _ieee_template(118)}
 
 

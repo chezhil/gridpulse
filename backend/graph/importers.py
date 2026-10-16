@@ -100,11 +100,11 @@ def matpower_to_spec(
         raise InvalidRequestError("MATPOWER case has no connected buses")
     # Unused columns may hold nan (real case files do); the ones read here must be numbers.
     # Inf is allowed only where MATPOWER means "no limit".
-    for name, finite, not_nan in (("bus", (BUS_I, BUS_TYPE, PD), ()), ("gen", (GEN_BUS, PG, GEN_STATUS), (PMAX,)),
+    for matrix, finite, not_nan in (("bus", (BUS_I, BUS_TYPE, PD), ()), ("gen", (GEN_BUS, PG, GEN_STATUS), (PMAX,)),
                                   ("branch", (F_BUS, T_BUS, BR_X, TAP, SHIFT, BR_STATUS), (RATE_A,))):
-        if any(not math.isfinite(r[c]) for r in mpc[name] for c in finite) or \
-                any(math.isnan(r[c]) for r in mpc[name] for c in not_nan):
-            raise InvalidRequestError(f"mpc.{name}: bus numbers, status, power and rating columns must be numbers")
+        if any(not math.isfinite(r[c]) for r in mpc[matrix] for c in finite) or \
+                any(math.isnan(r[c]) for r in mpc[matrix] for c in not_nan):
+            raise InvalidRequestError(f"mpc.{matrix}: bus numbers, status, power and rating columns must be numbers")
     numbers = [int(r[BUS_I]) for r in buses]
     width = max(3, len(str(max(numbers))))
     known = set(numbers)
