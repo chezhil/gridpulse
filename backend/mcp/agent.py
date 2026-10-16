@@ -22,40 +22,67 @@ from typing import Any, Callable, Dict, List, Optional
 from backend import graph
 
 MODEL = os.environ.get('GRIDPULSE_AGENT_MODEL', 'openai/gpt-oss-120b')
-MAX_TURNS = 12
+MAX_TURNS = 8
 MAX_TOKENS = 8192
 # Groq occasionally rejects a malformed tool call (400 tool_use_failed); retry the turn this many times.
 TOOL_CALL_RETRIES = 2
 
-SYSTEM_PROMPT = """You are the GridPulse grid-security advisor for a 500 kV corridor feeding a metropolitan substation.
-Your job: investigate the current grid state with the tools, then propose the smallest mitigation that brings every
-circuit and substation back within limits while keeping every Tier-1 consumer (the St. Jude trauma center) supplied.
+SYSTEM_PROMPT = """You are the GridPulse grid-security agent for a 500 kV grid stored in FalkorDB.
+Goal: the smallest mitigation that brings every circuit, substation and plant back within limits while every
+Tier-1 consumer (hospitals) stays supplied.
+
+The user message includes a GRAPH BRIEFING: results of FalkorDB queries already run for you (memory of past
+incidents and playbooks near the fault, the blast-radius trace with the power-flow projection, and the
+batteries / sheddable Tier-3 loads available). Treat it as ground truth for the current state.
 
 Rules:
-- Start by calling recall_memory on the fault origin: past incidents and playbooks near it show what worked before.
-  A playbook is a hint, not an authority; still check it with evaluate_plan against the current state.
-- Ground every claim in tool results. Cite circuit, substation, breaker and BESS IDs exactly as the tools return them.
-- Only Tier-3 breakers that check_breaker allows may be tripped. BESS dispatch is an absolute MW setpoint within
-  max_discharge_mw and needs SOC above 40%.
-- Prefer battery support before load shedding; shed only what the relief requirement needs.
-- Before finishing, call evaluate_plan on your candidate plan. If it is REJECTED, revise it.
-- Finish by calling submit_plan exactly once. If no mitigation is needed, submit an empty plan and say why.
-- You cannot actuate anything; a deterministic guard re-checks your plan and an operator decides."""
+- Ground every claim in the briefing or tool results; cite IDs exactly.
+- Prefer battery support (absolute MW setpoint, at most the listed available MW) before shedding Tier-3 loads,
+  and shed only what is needed. Never trip a breaker that is not listed as sheddable.
+- A remembered playbook is a hint: reuse it if it fits, but always verify.
+- Call evaluate_plan on your candidate plan. If REJECTED, read the reasons and revise.
+- Use other tools only if the briefing is missing something (e.g. the fault is hypothetical: trace_cascade with
+  assume_tripped).
+- Finish by calling submit_plan exactly once (empty plan if nothing is needed, with the reason).
+- You cannot actuate anything; the graph guard re-checks your plan and an operator decides."""
 
 
-def _slim(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Drop bulky evidence rows before sending a tool result to the model; keep the hashes."""
-    out = {k: v for k, v in result.items() if k not in ('evidence', 'assumptions')}
-    if 'evidence' in result:
-        out['evidence_hashes'] = [e.get('evidence_hash') for e in result['evidence']]
-    proj = out.get('projection')
-    if isinstance(proj, dict):
-        out['projection'] = {
-            **{k: proj[k] for k in ('model', 'outcome', 'required_relief_mw', 'overloads', 'islanded_substations') if k in proj},
-            'circuits_over_80pct': [c for c in proj.get('circuits', []) if c['loading_pct'] > 80],
-            'substations': proj.get('substations'),
-        }
-    return out
+def _compact(name: str, result: Dict[str, Any]) -> Dict[str, Any]:
+    """Small, decision-relevant view of a tool result (the free Groq tier is token-rate-limited)."""
+    hashes = [e.get('evidence_hash', '')[:19] for e in result.get('evidence', [])][:3]
+    if name == 'trace_cascade':
+        proj = result.get('projection', {})
+        sm = result.get('summary', {})
+        return {'outcome': proj.get('outcome'), 'required_relief_mw': proj.get('required_relief_mw'),
+                'overloads': [{k: o[k] for k in ('element', 'kind', 'loading_pct')} for o in proj.get('overloads', [])][:8],
+                'islanded_substations': proj.get('islanded_substations'), 'downstream_substations': sm.get('downstream_substations'),
+                'tier1_at_risk': sm.get('tier1_at_risk'), 'beyond_max_hops': result.get('reachability', {}).get('beyond_max_hops'),
+                'evidence': hashes}
+    if name == 'find_mitigation_assets':
+        return {'batteries': [{'id': b['id'], 'available_mw': b['available_mw'], 'soc_pct': b.get('soc_pct')} for b in result['bess']['eligible']],
+                'ineligible_batteries': [{'id': b['id'], 'reasons': b['reasons']} for b in result['bess']['ineligible']],
+                'sheddable_loads': [{'id': c['id'], 'breaker_id': c['breaker_id'], 'mw': c['mw_demand']} for c in result['sheddable_loads']['eligible']],
+                'totals': result.get('totals'), 'meets_requirement': result.get('meets_requirement'), 'evidence': hashes}
+    if name == 'evaluate_plan':
+        proj = result.get('projection', {})
+        return {'verdict': result.get('verdict'), 'reasons': result.get('reasons'), 'relief_mw': result.get('relief_mw'),
+                'projected_outcome': proj.get('outcome'),
+                'remaining_overloads': [f"{o['element']} {o['loading_pct']}%" for o in proj.get('overloads', [])][:6], 'evidence': hashes}
+    if name == 'recall_memory':
+        return {'incidents': [{k: i.get(k) for k in ('id', 'signature', 'status', 'source', 'actions', 'places')} for i in result.get('incidents', [])][:4],
+                'playbooks': result.get('playbooks', [])[:3], 'suggestions': result.get('suggestions', [])[:3], 'evidence': hashes}
+    if name == 'check_breaker':
+        return {k: result.get(k) for k in ('breaker_id', 'trip_allowed', 'reasons', 'shed_mw')} | {'evidence': hashes}
+    if name == 'verify_tier1_protection':
+        return {'outcome': result.get('outcome'), 'assets': [{k: a.get(k) for k in ('id', 'protected', 'at_risk')} for a in result.get('assets', [])],
+                'evidence': hashes}
+    if name == 'reroute_paths':
+        return {'outcome': result.get('outcome'), 'paths': [{'nodes': p['nodes'], 'impedance_pu': p['impedance_pu']} for p in result.get('paths', [])][:3]}
+    if name == 'criticality_ranking':
+        return {'ranking': [{k: r[k] for k in ('id', 'betweenness')} for r in result.get('ranking', [])][:8]}
+    if name == 'find_islands':
+        return {'components': [{k: c[k] for k in ('size', 'has_generator')} for c in result.get('components', [])]}
+    return {k: v for k, v in result.items() if k not in ('evidence', 'timing')}
 
 
 def _headline(name: str, result: Dict[str, Any]) -> str:
@@ -94,31 +121,27 @@ PLAN_PROPS = {'trip_breakers': {'type': 'array', 'items': {'type': 'string'}},
               'bess_dispatch': {'type': 'object', 'additionalProperties': {'type': 'number'}}}
 
 TOOLS = [
-    _tool('trace_cascade', 'Downstream blast radius of a span or node plus the dc-pf/1 loading projection of the '
-          'current graph state. Optional assume_tripped adds hypothetical circuit trips.',
-          {'origin_id': {'type': 'string', 'description': 'Span (TX_880..TX_888) or node id, e.g. SUB_METRO'},
-           'max_hops': {'type': 'integer', 'minimum': 1, 'maximum': 12},
+    _tool('trace_cascade', 'Blast radius of a span/node and the power-flow projection; assume_tripped adds hypothetical trips.',
+          {'origin_id': {'type': 'string', 'description': 'Span or node id, e.g. TX_882 or SUB_METRO'},
+           'max_hops': {'type': 'integer', 'minimum': 1, 'maximum': 12, 'description': 'default 8; TX_882 needs 6 to reach SUB_METRO'},
            'assume_tripped': {'type': 'array', 'items': CIRCUIT_REF}}, ['origin_id']),
-    _tool('find_mitigation_assets', 'Eligible BESS units and sheddable Tier-3 loads at a substation, with reasons '
-          'for anything ineligible.',
+    _tool('find_mitigation_assets', 'Usable batteries and sheddable Tier-3 loads at a substation.',
           {'substation_id': {'type': 'string'}, 'required_mw': {'type': 'number', 'minimum': 0}},
           ['substation_id', 'required_mw']),
-    _tool('check_breaker', 'Whether tripping a breaker is allowed (Tier-1/Tier-2 guard) and how much load it sheds.',
+    _tool('check_breaker', 'Whether a breaker may be tripped (Tier-1/2 guard) and the MW it sheds.',
           {'breaker_id': {'type': 'string'}}, ['breaker_id']),
-    _tool('verify_tier1_protection', 'Current energisation and projected risk for every Tier-1 consumer.',
+    _tool('verify_tier1_protection', 'Supply and projected risk for every Tier-1 consumer.',
           {'substation_id': {'type': 'string'}}, []),
-    _tool('reroute_paths', 'Lowest-impedance energised paths between two nodes (FalkorDB algo.SPpaths).',
+    _tool('reroute_paths', 'Lowest-impedance energised paths between two nodes (algo.SPpaths).',
           {'source_id': {'type': 'string'}, 'target_id': {'type': 'string'},
            'k': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, []),
-    _tool('criticality_ranking', 'Grid buses ranked by betweenness centrality with any N-1-critical circuits.',
+    _tool('criticality_ranking', 'Buses ranked by betweenness centrality.',
           {'limit': {'type': 'integer', 'minimum': 1, 'maximum': 20}}, []),
-    _tool('recall_memory', 'Past incidents (actions and outcomes) and learned playbooks within N grid hops of a span '
-          'or node, from the graph memory.',
+    _tool('recall_memory', 'Past incidents and learned playbooks within N hops of a span or node.',
           {'origin_id': {'type': 'string'}, 'hops': {'type': 'integer', 'minimum': 0, 'maximum': 6}}, ['origin_id']),
-    _tool('find_islands', 'Topologically disconnected parts of the grid (FalkorDB algo.WCC) and whether each has a generator.',
+    _tool('find_islands', 'Disconnected parts of the grid (algo.WCC).',
           {}, []),
-    _tool('evaluate_plan', 'Deterministic what-if check of a mitigation plan against the actuation guards. '
-          'Returns APPROVED or REJECTED with reasons and the projected state. Never actuates.',
+    _tool('evaluate_plan', 'Check a plan against the actuation guards (what-if, never actuates): APPROVED or REJECTED with reasons.',
           PLAN_PROPS, []),
     _tool('submit_plan', 'Submit the final mitigation proposal. Call exactly once, last.',
           {**PLAN_PROPS, 'summary': {'type': 'string', 'description': 'Two or three sentences for the operator.'},
@@ -127,7 +150,7 @@ TOOLS = [
 ]
 
 HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
-    'trace_cascade': lambda a: graph.trace_cascade(a['origin_id'], max_hops=a.get('max_hops', 6),
+    'trace_cascade': lambda a: graph.trace_cascade(a['origin_id'], max_hops=a.get('max_hops', 8),
                                                    assume_tripped=a.get('assume_tripped')),
     'find_mitigation_assets': lambda a: graph.find_mitigation_assets(a['substation_id'], a['required_mw']),
     'check_breaker': lambda a: graph.check_breaker(a['breaker_id']),
@@ -159,38 +182,105 @@ def make_client():
     if not key:  # compose passes an empty string when .env has no key
         raise AgentUnavailable('No Groq credentials configured; set GROQ_API_KEY')
     try:
-        return groq.Groq(api_key=key)
+        # Retries are handled in _create so rate-limit waits show up as agent steps.
+        return groq.Groq(api_key=key, max_retries=0, timeout=60.0)
     except groq.GroqError as exc:
         raise AgentUnavailable('No Groq credentials configured; set GROQ_API_KEY') from exc
 
 
-def _create(client, messages):
+RATE_LIMIT_BUDGET_S = 90.0
+
+
+def _retry_after(exc) -> float:
+    try:
+        return min(max(float(exc.response.headers.get('retry-after', '5')), 1.0), 30.0)
+    except (AttributeError, TypeError, ValueError):
+        return 5.0
+
+
+def _create(client, messages, on_step: Optional[Callable[[Dict[str, Any]], None]] = None):
     import groq
     kwargs = dict(model=MODEL, messages=messages, tools=TOOLS, tool_choice='auto',
                   max_completion_tokens=MAX_TOKENS, temperature=0.2)
     if MODEL.startswith('openai/gpt-oss'):
         kwargs['reasoning_effort'] = 'medium'
-    for attempt in range(TOOL_CALL_RETRIES + 1):
+    waited = 0.0
+    attempt = 0
+    while True:
         try:
             return client.chat.completions.create(**kwargs)
+        except groq.RateLimitError as exc:
+            # Free-tier tokens-per-minute limit: wait as told, visibly, within a bounded budget.
+            delay = _retry_after(exc)
+            if waited + delay > RATE_LIMIT_BUDGET_S:
+                raise AgentFailed('Groq rate limit: try again in a minute') from exc
+            if on_step:
+                on_step({'kind': 'wait', 'text': f'Groq free-tier rate limit: waiting {delay:.0f}s'})
+            time.sleep(delay)
+            waited += delay
+            continue
         except groq.BadRequestError as exc:
             if 'tool_use_failed' in str(exc) and attempt < TOOL_CALL_RETRIES:
+                attempt += 1
                 continue
             raise AgentFailed(f'Groq rejected the request: {exc.message}') from exc
         except groq.AuthenticationError as exc:
             raise AgentUnavailable('Groq credentials missing or invalid; set GROQ_API_KEY') from exc
         except groq.PermissionDeniedError as exc:
             raise AgentUnavailable(f'Groq API key lacks permission: {exc.message}') from exc
-        except groq.RateLimitError as exc:
-            raise AgentFailed('Groq rate limit reached; retry shortly') from exc
         except groq.APIStatusError as exc:
             raise AgentFailed(f'Groq API error {exc.status_code}: {exc.message}') from exc
         except groq.APIConnectionError as exc:
+            if attempt < TOOL_CALL_RETRIES:
+                attempt += 1
+                time.sleep(1.0)
+                continue
             raise AgentFailed('Could not reach the Groq API') from exc
 
 
+_ID_IN_TEXT = __import__('re').compile(r"\b(TX_\d{3}|T\d{1,2}|SUB_[A-Z0-9_]+|HYDRO_[A-Z0-9_]+|BR\d{3}|B\d{3})\b")
+
+
+def briefing(question: str, origin_id: Optional[str] = None,
+             on_step: Optional[Callable[[Dict[str, Any]], None]] = None) -> str:
+    """Run the core graph queries up front and return a compact text briefing for the model.
+
+    This is the graph acting as the agent's context layer: memory recall, blast radius with
+    power-flow projection, and mitigation assets, each streamed as a step with its Cypher.
+    """
+    origin = origin_id or next(iter(_ID_IN_TEXT.findall(question.upper())), None) or 'SUB_METRO'
+    lines = [f'Fault origin: {origin}.']
+
+    def step(tool, args, result):
+        if on_step:
+            on_step({'kind': 'context', 'tool': tool, 'input': args, 'result': _headline(tool, result),
+                     'cypher': [e.get('cypher') for e in result.get('evidence', [])][:3],
+                     'evidence_hashes': [e.get('evidence_hash') for e in result.get('evidence', [])][:3],
+                     'server_ms': round(sum(e.get('server_ms', 0) for e in result.get('evidence', [])), 3)})
+
+    try:
+        mem = graph.memory.recall(origin, 2)
+        step('recall_memory', {'origin_id': origin, 'hops': 2}, mem)
+        lines.append('MEMORY ' + json.dumps(_compact('recall_memory', mem), default=str, separators=(',', ':')))
+    except graph.GraphError as exc:
+        lines.append(f'MEMORY unavailable: {exc}')
+    try:
+        trace = graph.trace_cascade(origin, max_hops=8)
+        step('trace_cascade', {'origin_id': origin, 'max_hops': 8}, trace)
+        lines.append('TRACE (current stored state) ' + json.dumps(_compact('trace_cascade', trace), default=str, separators=(',', ':')))
+        subs = trace['summary']['downstream_substations'] or [s['id'] for s in trace['projection']['substations'] if s['overload']]
+        relief = trace['projection'].get('required_relief_mw') or 0.0
+        for sid in subs[:2]:
+            assets = graph.find_mitigation_assets(sid, relief)
+            step('find_mitigation_assets', {'substation_id': sid, 'required_mw': relief}, assets)
+            lines.append(f'ASSETS at {sid} ' + json.dumps(_compact('find_mitigation_assets', assets), default=str, separators=(',', ':')))
+    except graph.GraphError as exc:
+        lines.append(f'TRACE unavailable for {origin}: {exc}')
+    return '\n'.join(lines)
+
+
 def advise(question: Optional[str] = None, client=None,
-           on_step: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
+           on_step: Optional[Callable[[Dict[str, Any]], None]] = None, origin_id: Optional[str] = None) -> Dict[str, Any]:
     """Run the advisory loop and return the proposal with its deterministic validation.
 
     ``on_step`` (optional) is called with a small dict for every model turn and
@@ -200,13 +290,14 @@ def advise(question: Optional[str] = None, client=None,
     started = time.perf_counter()
     prompt = question or ('Assess the current grid state. Identify any projected overloads or islanding and '
                           'propose a mitigation plan.')
+    context = briefing(prompt, origin_id, on_step)
     messages: List[Dict[str, Any]] = [{'role': 'system', 'content': SYSTEM_PROMPT},
-                                      {'role': 'user', 'content': prompt}]
+                                      {'role': 'user', 'content': f'{prompt}\n\nGRAPH BRIEFING (FalkorDB, just queried):\n{context}'}]
     calls: List[Dict[str, Any]] = []
     usage = {'input_tokens': 0, 'output_tokens': 0}
     submitted = None
     for _turn in range(MAX_TURNS):
-        response = _create(client, messages)
+        response = _create(client, messages, on_step)
         if response.usage is not None:
             usage['input_tokens'] += response.usage.prompt_tokens or 0
             usage['output_tokens'] += response.usage.completion_tokens or 0
@@ -250,7 +341,7 @@ def advise(question: Optional[str] = None, client=None,
                 result = handler(args)
                 calls.append({'tool': name, 'input': args,
                               'evidence_hashes': [e.get('evidence_hash') for e in result.get('evidence', [])]})
-                content = json.dumps(_slim(result), default=str)
+                content = json.dumps(_compact(name, result), default=str, separators=(',', ':'))
                 if on_step:
                     on_step({'kind': 'tool', 'tool': name, 'input': args, 'result': _headline(name, result),
                              'cypher': [e.get('cypher') for e in result.get('evidence', [])][:3],

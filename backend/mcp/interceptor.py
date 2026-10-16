@@ -178,7 +178,7 @@ class GridPulseInterceptor:
         sim._agent_log = 'AI operator investigating with graph tools.'
         try:
             # The model runs without the lock so telemetry, reset and other reads keep working.
-            advice = await asyncio.to_thread(agent.advise, QUESTIONS[scenario_id], None, _step)
+            advice = await asyncio.to_thread(agent.advise, QUESTIONS[scenario_id], None, _step, ORIGINS[scenario_id])
         except (agent.AgentUnavailable, agent.AgentFailed) as exc:
             _step({'kind': 'fallback', 'text': f'Agent unavailable: {exc}. Deterministic pipeline takes over.'})
             return False
