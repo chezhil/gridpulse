@@ -13,7 +13,7 @@
 
 
 
-    <link rel="stylesheet" href="assets/design.css?v=aa6811d2c582">
+    <link rel="stylesheet" href="assets/design.css?v=48e95b1bf7f5">
 </head>
 <body class="text-slate-100 antialiased selection:bg-sky-500 selection:text-white">
 
@@ -562,7 +562,14 @@ RETURN path, sub.capacity_mw;</pre>
                             500kV Double-Circuit Corridor (T1–T9) → MetroGrid
                         </h3>
                     </div>
-                    <div class="flex flex-wrap gap-2 font-mono text-xs">
+                    <div class="flex flex-wrap gap-2 font-mono text-xs items-center">
+                        <label class="flex items-center gap-1.5 px-2 py-1 rounded-xl border border-slate-700/60 text-slate-500 dark:text-slate-300" title="AI operator: the Groq agent investigates with graph tools and proposes a plan; the graph guard approves it before anything executes. Falls back to the deterministic pipeline.">
+                            Run with
+                            <select id="console-scenario-mode" style="background:#0f172a;color:#7dd3fc;border:1px solid #334155;border-radius:8px;padding:2px 6px;font:600 11px 'JetBrains Mono',monospace;color-scheme:dark">
+                                <option value="deterministic">Deterministic pipeline</option>
+                                <option value="agent">AI operator (agent)</option>
+                            </select>
+                        </label>
                         <button onclick="triggerConsoleScenario(1)" class="px-3 py-1.5 rounded-xl bg-rose-500/15 text-rose-500 dark:text-rose-400 border border-rose-500/30 hover:bg-rose-500/25">
                             Scenario 1: Lightning (TX_882)
                         </button>
@@ -653,6 +660,6 @@ RETURN path, sub.capacity_mw;</pre>
         </div>
     </div>
 
-    <script src="assets/grid-icons.js?v=82017f277623"></script><script src="assets/world.js?v=675f22aa61c4"></script><script src="assets/app.js?v=db5ed2e16782"></script><script src="assets/features.js?v=1eaa45fa9ba9"></script>
+    <script src="assets/grid-icons.js?v=82017f277623"></script><script src="assets/world.js?v=b6fbd693efa1"></script><script src="assets/app.js?v=a2ad95693365"></script><script src="assets/features.js?v=1eaa45fa9ba9"></script>
 </body>
 </html>

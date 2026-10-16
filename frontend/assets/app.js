@@ -6,6 +6,14 @@
   const roles = {GRID_OPERATOR:'operator',TOPOLOGY_ENGINEER:'engineer',NERC_AUDITOR:'auditor'};
   const say = (id, value) => { if ($(id)) $(id).textContent = value; };
   const pretty = x => typeof x === 'string' ? x : JSON.stringify(x, null, 2);
+  // One readable line per agent step (graph briefing, tool calls, verdict, fallback), as streamed in telemetry.
+  const agentSteps = steps => steps.map(x => {
+    const t = (x.at || '').slice(11, 19);
+    const head = {start:'▶ FAULT', context:`📚 GRAPH ${x.tool}`, tool:`🔧 ${x.tool}`, tool_error:`⚠ ${x.tool}`, thought:'💭 MODEL', submit:'📝 PLAN', verdict:`⚖ GUARD ${x.verdict}`, fallback:'↩ FALLBACK', wait:'⏳ WAIT', done:'✅ DONE'}[x.kind] || x.kind;
+    const body = x.result || x.summary || x.text || x.error || (x.reasons || []).join('; ') || '';
+    const extra = x.kind === 'submit' && x.plan ? `  ${JSON.stringify(x.plan)}` : x.server_ms ? `  (${x.server_ms} ms graph)` : '';
+    return `${t}  ${head}  ${String(body).replace(/\s+/g, ' ').slice(0, 220)}${extra}`;
+  }).join('\n');
   async function api(path, options = {}) {
     const response = await fetch(base + path, {...options, headers:{'Content-Type':'application/json', ...(session ? {Authorization:`Bearer ${session.access_token}`} : {}), ...options.headers}, signal:AbortSignal.timeout(options.timeoutMs || 20000)});
     const data = await response.json().catch(() => ({}));
@@ -93,7 +101,7 @@
     if(scenarioName.toLowerCase().endsWith(` ${plainStatus.toLowerCase()}`))scenarioName=scenarioName.slice(0,-plainStatus.length).trim();
     const statusLabel={NOMINAL:'Normal operation',MITIGATED:'Risk contained',ACTIVE:'Incident active',TRIPPED:'Line tripped',UNKNOWN:'Awaiting status'}[rawStatus]||plainStatus;
     say('scada-topo-heading',`${scenarioName} — ${statusLabel}`);
-    say('console-mcp-log',data.agent_steps?.length?pretty(data.agent_steps):pretty(data.agent_log||'No agent activity.'));
+    say('console-mcp-log',data.agent_steps?.length?agentSteps(data.agent_steps)+'\n\n'+(data.agent_log||''):pretty(data.agent_log||'No agent activity.'));
     consoleScenario=data.scenario?.id||0;consoleMitigated=data.scenario?.status==='MITIGATED';
     if(topology){for(const node of topology.nodes){const fresh=[...(data.towers||[]),...(data.consumers||[]),data.bess,data.substation].find(n=>n?.id===node.id);if(fresh)Object.assign(node.properties,fresh);}for(const edge of topology.edges){const span=(data.spans||[]).find(s=>edge.id.startsWith(s.id+':'));if(span)edge.properties.status=edge.id.includes('UPPER_PRIMARY')?span.upper_status:span.lower_status;}}
   }
@@ -111,7 +119,8 @@
   }
   window.triggerConsoleScenario=id=>guarded(async()=>{
     if(!healthy||session?.role!=='operator'||busy)throw Error('An operator session and healthy backend are required.');
-    busy=true;controls();try{await api(`/api/sim/trigger-scenario/${id}`,{method:'POST'});say('action-message','Scenario accepted. Following backend telemetry.');await loadAudit();}finally{busy=false;controls();}
+    const mode=document.getElementById('console-scenario-mode')?.value==='agent'?'agent':'deterministic';
+    busy=true;controls();try{await api(`/api/sim/trigger-scenario/${id}?mode=${mode}`,{method:'POST'});say('action-message',mode==='agent'?'AI operator investigating with graph tools: follow its steps in 03 / SCADA MCP Agent Loop.':'Scenario accepted. Following backend telemetry.');await loadAudit();}finally{busy=false;controls();}
   });
   window.resetConsoleGrid=()=>guarded(async()=>{if(!healthy||session?.role!=='operator')throw Error('An operator session and healthy backend are required.');await api('/api/sim/reset',{method:'POST'});snapshot(await api('/api/sim/state'));await loadTopology();await loadAudit();});
   // The public corridor is an explicitly illustrative animation, never an unauthenticated grid mutation.
