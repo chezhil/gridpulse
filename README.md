@@ -9,9 +9,11 @@ When a 500 kV line fails, power instantly shifts onto the remaining paths and ca
 
 Users can also **build their own electricity networks** (each in its own FalkorDB graph) and run test cases on them. That includes the public **IEEE 118-bus** system, where our power flows match pandapower to within 0.001 MW.
 
+**Live demo: https://backend-production-a717.up.railway.app** (sign in with the demo operator button). The console is at `/`, and the full Lab at `/lab.html`.
+
 ## 3-minute judge tour
 
-Start the app (see Quick start below), open **http://localhost:8000/lab.html** and sign in with the demo button (top right).
+Open the live demo above (or start the app locally, see Quick start below), go to **/lab.html** and sign in with the demo button (top right).
 
 1. **Live Ops.** Pick *AI operator* mode and click *Lightning TX_882*. Watch each step stream in: the memory recall, the blast-radius trace (with its Cypher), the mitigation search, the plan, the graph guard's verdict, then execution and verification.
 2. **Run Wildfire (deterministic mode).** It's a different fault, but graph memory ranks the playbook learned at TX_882 as similar ("1 hop away, 100% shared downstream substations"). The guard re-approves it and it's reused in **1 decision step**. The **Memory** tab shows the learning curve, incidents, and playbooks with win/loss records; playbooks that keep failing retire themselves.
