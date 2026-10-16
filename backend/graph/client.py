@@ -260,6 +260,12 @@ def _plain(value: Any) -> Any:
         return [_plain(v) for v in value]
     if hasattr(value, "properties") and hasattr(value, "labels"):
         return {"labels": list(value.labels), "properties": _plain(value.properties)}
+    if hasattr(value, "properties") and hasattr(value, "relation"):
+        return {"type": value.relation, "properties": _plain(value.properties)}
+    if callable(getattr(value, "nodes", None)) and callable(getattr(value, "edges", None)):
+        nodes = [_plain(n) for n in value.nodes()]
+        return {"path": [n.get("properties", {}).get("id") for n in nodes], "nodes": nodes,
+                "edges": [_plain(e) for e in value.edges()]}
     return value
 
 
