@@ -11,7 +11,7 @@
     const t = (x.at || '').slice(11, 19);
     const head = {start:'▶ FAULT', context:`📚 GRAPH ${x.tool}`, tool:`🔧 ${x.tool}`, tool_error:`⚠ ${x.tool}`, thought:'💭 MODEL', submit:'📝 PLAN', verdict:`⚖ GUARD ${x.verdict}`, fallback:'↩ FALLBACK', wait:'⏳ WAIT', done:'✅ DONE'}[x.kind] || x.kind;
     const body = x.result || x.summary || x.text || x.error || (x.reasons || []).join('; ') || '';
-    const extra = x.kind === 'submit' && x.plan ? `  ${JSON.stringify(x.plan)}` : x.server_ms ? `  (${x.server_ms} ms graph)` : '';
+    const extra = x.kind === 'submit' && x.plan ? `  ${[...Object.entries(x.plan.bess_dispatch || {}).map(([k, v]) => `${k} → ${v} MW`), ...(x.plan.trip_breakers || []).map(b => `open ${b}`)].join(' · ') || 'no action'}` : x.server_ms ? `  (${x.server_ms} ms graph)` : '';
     return `${t}  ${head}  ${String(body).replace(/\s+/g, ' ').slice(0, 220)}${extra}`;
   }).join('\n');
   async function api(path, options = {}) {
@@ -85,11 +85,53 @@
   window.transitionToGateway=()=>{location.hash=session?'topology':'gateway';route();};
   window.returnToCorridor=()=>{location.hash='';route();};
   async function loadTopology(){topology=await api('/api/graph/topology');}
+  const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
+  const outcomeTone=o=>/WITHIN_LIMITS|NO_IMPACT|SUCCESS|APPROVED|VALID|MITIGATED/.test(o)?'ok':/ISLANDING|REQUESTED/.test(o)?'warn':/OVERLOAD|REJECTED|FAILED|BROKEN/.test(o)?'bad':'info';
+  const pill=(text,tone)=>el('span',`trace-pill trace-${tone||outcomeTone(text)}`,String(text).replace(/_/g,' '));
+  const short=h=>h?String(h).replace(/^sha256:/,'').slice(0,12)+'…':'—';
+  const statGrid=items=>{const g=el('div','trace-stats');for(const [label,value,tone] of items){const c=el('div',`trace-stat${tone?` trace-${tone}`:''}`);c.append(el('small','',label),el('b','',value??'—'));g.append(c);}return g;};
+  const rawJson=(label,value)=>{const d=el('details','trace-raw');d.append(el('summary','',label),el('pre','integration-result',pretty(value)));return d;};
+  const titleCase=v=>String(v||'').replace(/_/g,' ').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()).replace(/\b(Scada|Bess|Mcp|Tx|Mw)\b/g,w=>w.toUpperCase());
+  // Every executed query recorded anywhere inside an evidence object (cypher + hash), without repeats.
+  function evidenceQueries(value,found=[],seen=new Set()){
+    if(!value||typeof value!=='object'||found.length>=16)return found;
+    if(Array.isArray(value)){value.forEach(v=>evidenceQueries(v,found,seen));return found;}
+    if(typeof value.cypher==='string'&&value.evidence_hash){if(!seen.has(value.evidence_hash)){seen.add(value.evidence_hash);found.push(value);}return found;}
+    Object.values(value).forEach(v=>evidenceQueries(v,found,seen));return found;
+  }
+  function auditDetail(item){
+    const box=el('div','trace-result audit-detail');
+    // Guard refusals store bare codes (SERVES_TIER_1, ALREADY_OPEN); show them as words.
+    if(item.reason)box.append(el('p','audit-reason',/^[A-Z0-9_]+(, [A-Z0-9_]+)*$/.test(item.reason)?`Refused: ${item.reason.replace(/_/g,' ').toLowerCase()}`:item.reason));
+    box.append(statGrid([['Operator',item.operator_id],['State version',item.state_version],['Chain position',`#${item.seq??'—'}`],['Run',short(item.run_id)]]));
+    const req=item.requested_action;
+    if(req&&typeof req==='object')box.append(el('h4','trace-h','Requested action'),el('div','trace-path',Object.entries(req).map(([k,v])=>`${k}: ${typeof v==='object'?JSON.stringify(v):v}`).join('  ·  ')));
+    const ev=item.evidence&&typeof item.evidence==='object'?item.evidence:null;
+    if(ev){
+      const facts=[];
+      // Failed actions keep the guard's result under evidence.guard.
+      const g=ev.guard&&typeof ev.guard==='object'?ev.guard:ev;
+      if(ev.guard!==undefined)facts.push(ev.state_changed?'The action was applied but its confirmation failed.':'Refused before anything changed on the grid.');
+      if(g.trip_allowed!==undefined)facts.push(`Graph guard: ${g.trip_allowed?'trip allowed':'trip refused'}${(g.reasons||[]).length?` (${g.reasons.join(', ').replace(/_/g,' ').toLowerCase()})`:''}`);
+      if(g.shed_mw!==undefined&&g.trip_allowed)facts.push(`Load shed: ${g.shed_mw} MW`);
+      if(g.bess?.eligible)facts.push(`Battery check: ${g.bess.eligible.map(b=>`${b.id} ${b.available_mw} MW available`).join(', ')||'no eligible battery'}`);
+      const post=ev.post_action_trace?.summary||ev.trace?.summary;
+      if(post)facts.push(`After action: ${String(post.projection_outcome||'').replace(/_/g,' ').toLowerCase()}, Tier-1 at risk: ${(post.tier1_at_risk||[]).join(', ')||'none'}`);
+      if(ev.result&&typeof ev.result==='object')facts.push(`Result: ${Object.entries(ev.result).filter(([,v])=>typeof v!=='object').map(([k,v])=>`${k} ${v}`).join(', ')}`);
+      if(ev.verdict||ev.validation?.verdict)facts.push(`Plan verdict: ${ev.verdict||ev.validation.verdict}`);
+      if(facts.length){box.append(el('h4','trace-h','What the evidence shows'));const ul=el('ul','trace-list');facts.forEach(f=>ul.append(el('li','',f)));box.append(ul);}
+      const queries=evidenceQueries(ev);
+      if(queries.length){box.append(el('h4','trace-h',`FalkorDB queries behind this record (${queries.length})`));const ul=el('ul','trace-list trace-mono');queries.forEach(q=>ul.append(el('li','',`${q.name||'query'} · ${q.row_count??'?'} rows · ${q.server_ms??'?'} ms · ${short(q.evidence_hash)}`)));box.append(ul);}
+    }
+    box.append(el('h4','trace-h','Hash chain'),el('div','trace-mono',`evidence ${short(item.evidence_hash)}  ·  previous ${short(item.prev_hash)}  ·  record ${short(item.record_hash)}`));
+    box.append(rawJson('Raw audit record (JSON)',item));
+    return box;
+  }
   async function loadAudit(){
     audit=await api('/api/audit/logs?limit=100');
     const body=$('console-audit-tbody');body.replaceChildren();
     if(!audit.length){const row=body.insertRow();const cell=row.insertCell();cell.colSpan=5;cell.textContent='No audit records yet.';}
-    for(const item of audit){const row=body.insertRow();for(const value of [item.timestamp,item.scenario_id??'—',item.target,item.action]){const cell=row.insertCell();cell.className='py-3 px-2';cell.textContent=value??'—';}const cell=row.insertCell();const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent=item.outcome||'View evidence';const pre=document.createElement('pre');pre.className='integration-result';pre.textContent=pretty(item);details.append(summary,pre);cell.append(details);}
+    for(const item of audit){const row=body.insertRow();const when=item.timestamp?item.timestamp.replace('T',' ').slice(0,19):'—';for(const value of [when,item.scenario_id?`Scenario ${item.scenario_id}`:'—',item.target,titleCase(item.action)]){const cell=row.insertCell();cell.className='py-3 px-2';cell.textContent=value??'—';}const cell=row.insertCell();const details=el('details','audit-evidence');const summary=el('summary');summary.append(pill(item.outcome||'RECORDED'),el('span','audit-view',' view evidence'));details.append(summary);details.addEventListener('toggle',()=>{if(details.open&&details.children.length===1)details.append(auditDetail(item));},{once:false});cell.append(details);}
   }
   function snapshot(data){
     lastSnapshot=data;lastSeen=Date.now();const m=data.metrics||{};
@@ -136,8 +178,6 @@
   window.resetGrid=()=>{isFaultActive=false;isRerouted=false;say('hud-status-title','ILLUSTRATIVE CORRIDOR · Open console for live data');};
   window.toggleAutoCycle=enabled=>{clearInterval(autoCycleTimer);if(enabled){let id=1;triggerScenario(id);autoCycleTimer=setInterval(()=>triggerScenario(id=id%3+1),5500);}};
   // Trace results: a readable summary first, the full API response one click away.
-  const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
-  const outcomeTone=o=>/WITHIN_LIMITS|NO_IMPACT/.test(o)?'ok':/ISLANDING/.test(o)?'warn':/OVERLOAD/.test(o)?'bad':'info';
   function renderTrace(r){
     const box=$('trace-result');box.replaceChildren();
     const s=r.summary||{},p=r.projection||{},o=r.origin||{};
@@ -189,9 +229,28 @@
     const trip=$('trace-trip').checked&&/^TX_\d+$/.test(origin)?[{span_id:origin,circuit:'UPPER_PRIMARY'}]:[];
     const result=await api('/api/graph/trace-cascade',{method:'POST',body:JSON.stringify({origin_id:origin,max_hops:Number($('trace-hops').value),assume_tripped:trip})});
     renderTrace(result);say('console-cypher-pre',(result.evidence||[]).map(x=>`// ${x.name} · ${x.row_count} rows · ${x.server_ms} ms\n${x.cypher}`).filter(Boolean).join('\n\n')||'No Cypher evidence returned.');}).then(()=>{if($('trace-result').textContent==='Tracing…')say('trace-result','Trace unavailable. See the error above.');});};
-  $('agent-form').onsubmit=e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit?.disabled)return;guarded(async()=>{say('agent-result','Requesting agent advice…');if(submit)submit.disabled=true;try{const result=await api('/api/mcp/agent/advise',{method:'POST',timeoutMs:180000,body:JSON.stringify({question:$('agent-question').value,execute:$('agent-execute').checked})});say('agent-result',pretty(result));await loadAudit();}catch(error){say('agent-result',error.message);throw error;}finally{if(submit)submit.disabled=false;}});};
+  $('agent-form').onsubmit=e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit?.disabled)return;guarded(async()=>{say('agent-result','Requesting agent advice…');if(submit)submit.disabled=true;try{const result=await api('/api/mcp/agent/advise',{method:'POST',timeoutMs:180000,body:JSON.stringify({question:$('agent-question').value,execute:$('agent-execute').checked})});renderAdvice(result);await loadAudit();}catch(error){say('agent-result',error.message);throw error;}finally{if(submit)submit.disabled=false;}});};
   $('audit-refresh').onclick=()=>guarded(loadAudit);
-  $('audit-verify').onclick=()=>guarded(async()=>say('audit-result',pretty(await api('/api/audit/verify'))));
+  $('audit-verify').onclick=()=>guarded(async()=>{
+    const r=await api('/api/audit/verify'),box=$('audit-result');box.replaceChildren();
+    const head=el('div','trace-head');head.append(pill(r.valid?'CHAIN VALID':'CHAIN BROKEN',r.valid?'ok':'bad'),el('span','trace-sub',r.valid?`Every record's hash links to the one before it.`:`Tampering or corruption detected at record #${r.first_break?.seq}: ${r.first_break?.problem||'hash mismatch'}`));
+    box.append(head,statGrid([['Records checked',r.checked],['Legacy (unchained)',r.legacy_unchained??0],['Latest record',r.head?`#${r.head.seq}`:'—'],['Latest hash',short(r.head?.record_hash)]]),rawJson('Raw verification response (JSON)',r));
+  });
+  function renderAdvice(r){
+    const box=$('agent-result');box.replaceChildren();
+    const v=r.validation||{},plan=r.plan||{};
+    const head=el('div','trace-head');head.append(pill(v.verdict||'NO VERDICT'),el('span','trace-sub',`${r.model||'agent'} · ${(r.tool_calls||[]).length} graph tool calls · ${r.elapsed_s??'—'} s`));box.append(head);
+    if(r.summary)box.append(el('p','audit-reason',r.summary));
+    if(r.rationale)box.append(el('p','trace-sub',r.rationale));
+    const steps=[...Object.entries(plan.bess_dispatch||{}).map(([id,mw])=>`Dispatch ${id} to ${mw} MW`),...(plan.trip_breakers||[]).map(b=>`Open breaker ${b}`)];
+    box.append(statGrid([['Projected outcome',String(v.projection_outcome||'—').replace(/_/g,' '),outcomeTone(v.projection_outcome)],['Relief',v.relief_mw!==undefined?`${v.relief_mw} MW`:'—'],['Tier-1 supplied',(v.tier1||[]).length?((v.tier1||[]).every(t=>t.supplied)?'All':'NO'):'—',(v.tier1||[]).every(t=>t.supplied)?'ok':'bad'],['Executed',(r.executed||[]).length?`${r.executed.length} actions`:'Not executed']]));
+    box.append(el('h4','trace-h','Proposed plan'));const ul=el('ul','trace-list');(steps.length?steps:['No action needed']).forEach(x=>ul.append(el('li','',x)));box.append(ul);
+    const problems=[...(v.reasons||[]),...(r.execution_blocked||[]),...(r.execution_failed?[`Stopped at ${r.execution_failed.action}(${r.execution_failed.target}): ${r.execution_failed.error}`]:[])];
+    if(problems.length){box.append(el('h4','trace-h','Why it was blocked'));const pl=el('ul','trace-list trace-bad');problems.forEach(x=>pl.append(el('li','',x)));box.append(pl);}
+    if((r.tool_calls||[]).length){box.append(el('h4','trace-h','Graph tools the agent used'));const tl=el('ul','trace-list trace-mono');r.tool_calls.forEach(c=>tl.append(el('li','',`${c.tool}(${Object.entries(c.input||{}).map(([k,x])=>`${k}=${typeof x==='object'?JSON.stringify(x):x}`).join(', ')})${c.error?` → error: ${c.error}`:` · ${(c.evidence_hashes||[]).length} evidence hashes`}`)));box.append(tl);}
+    if(r.audit_id)box.append(el('div','trace-mono',`Audit record ${short(r.audit_id)}`));
+    box.append(rawJson('Raw API response (JSON)',r));
+  }
   $('audit-export').onclick=()=>guarded(async()=>{await loadAudit();const url=URL.createObjectURL(new Blob([pretty(audit)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='gridpulse-audit.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
   const topologyView=$('scada-topology-view'),fullscreenButton=$('topology-fullscreen-toggle');
   let topologyFallbackExpanded=false;

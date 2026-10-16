@@ -60,10 +60,21 @@
       if(page==='learning')await Promise.all([loadSaved(),loadLearning()]).then(loadNetworkMemory);
     }catch(error){showError(page==='askgrid'?'ask-grid-status':page==='learning'?'learning-status':'network-status',error);}
   }
+  // Query rows as a table: graph paths read as A → B, nested values stay compact.
+  function renderRows(box,rows){
+    box.replaceChildren();if(!rows.length){box.textContent='No rows.';return;}
+    const cell=v=>v===null||v===undefined?'—':Array.isArray(v)?v.map(x=>typeof x==='object'&&x?x.id??JSON.stringify(x):x).join(' → '):typeof v==='object'?(v.id??Object.entries(v).map(([k,x])=>`${k}: ${typeof x==='object'?JSON.stringify(x):x}`).join(', ')):String(v);
+    const cols=[...new Set(rows.flatMap(r=>Object.keys(r)))];
+    const table=document.createElement('table');table.className='trace-table';const head=table.insertRow();
+    cols.forEach(c=>{const th=document.createElement('th');th.textContent=c;head.append(th);});
+    rows.slice(0,200).forEach(r=>{const tr=table.insertRow();cols.forEach(c=>tr.insertCell().textContent=cell(r[c]));});
+    const wrap=document.createElement('div');wrap.style.overflowX='auto';wrap.append(table);box.append(wrap);
+    if(rows.length>200)box.append(Object.assign(document.createElement('p'),{className:'feature-meta',textContent:`Showing 200 of ${rows.length} rows.`}));
+  }
   $('ask-grid-form').addEventListener('submit',async event=>{
     event.preventDefault();const button=event.submitter||$('ask-grid-form').querySelector('button');button.disabled=true;say('ask-grid-status','Querying the graph…');
     try{const data=await client.api('/api/mcp/ask',{method:'POST',body:JSON.stringify({question:$('ask-grid-question').value,network_id:$('ask-grid-network').value||null}),timeoutMs:60000});
-      say('ask-grid-answer',data.answer||data.explanation||'No answer returned.');say('ask-grid-cypher',data.cypher||'No query generated.');say('ask-grid-meta',data.answerable?`${data.row_count??0} rows · ${data.server_ms??'—'} ms · evidence ${data.evidence_hash||'—'}`:'The question could not be answered.');say('ask-grid-rows',pretty(data.rows||[]));say('ask-grid-status','Read-only query complete.');
+      say('ask-grid-answer',data.answer||data.explanation||'No answer returned.');say('ask-grid-cypher',data.cypher||'No query generated.');say('ask-grid-meta',data.answerable?`${data.row_count??0} rows · ${data.server_ms??'—'} ms · evidence ${data.evidence_hash||'—'}`:'The question could not be answered.');renderRows($('ask-grid-rows'),data.rows||[]);say('ask-grid-status','Read-only query complete.');
     }catch(error){showError('ask-grid-status',error);}finally{button.disabled=false;}
   });
   $('network-template-select').addEventListener('change',describeTemplate);

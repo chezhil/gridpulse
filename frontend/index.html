@@ -13,7 +13,7 @@
 
 
 
-    <link rel="stylesheet" href="assets/design.css?v=d13d92c98e03">
+    <link rel="stylesheet" href="assets/design.css?v=de314e3d1205">
 </head>
 <body class="text-slate-100 antialiased selection:bg-sky-500 selection:text-white">
 
@@ -599,7 +599,7 @@ RETURN path, sub.capacity_mw;</pre>
             <!-- Sub-Page 3: SCADA MCP Agent Loop -->
             <div id="scada-page-mcp" class="hidden scada-surface rounded-3xl p-6 space-y-4">
                 <h3 class="font-display font-bold text-xl text-slate-900 dark:text-white">Zero-Guessing SCADA MCP Tool Stream</h3>
-                <form id="agent-form" class="integration-controls"><label>Ask the grid agent <input id="agent-question" placeholder="Explain the current grid risk" maxlength="2000" required></label><label><input id="agent-execute" type="checkbox"> Execute validated plan (operator)</label><button>Request advice</button></form><pre id="agent-result" class="integration-result"></pre><div id="console-mcp-log" class="bg-slate-950 text-slate-300 font-mono text-xs p-4 rounded-2xl border border-slate-800 space-y-2 h-80 overflow-y-auto">Awaiting backend agent activity.
+                <form id="agent-form" class="integration-controls"><label>Ask the grid agent <input id="agent-question" placeholder="Explain the current grid risk" maxlength="2000" required></label><label><input id="agent-execute" type="checkbox"> Execute validated plan (operator)</label><button>Request advice</button></form><div id="agent-result" class="trace-result" aria-live="polite"></div><div id="console-mcp-log" class="bg-slate-950 text-slate-300 font-mono text-xs p-4 rounded-2xl border border-slate-800 space-y-2 h-80 overflow-y-auto">Awaiting backend agent activity.
                 </div>
             </div>
 
@@ -607,7 +607,7 @@ RETURN path, sub.capacity_mw;</pre>
             <div id="scada-page-audit" class="hidden scada-surface rounded-3xl p-6 space-y-4">
                 <h3 class="font-display font-bold text-xl text-slate-900 dark:text-white">NERC CIP Deterministic Audit Trail</h3>
                 <p class="text-xs font-mono text-slate-400">Every physical breaker actuation is backed by a verified FalkorDB Cypher trace.</p>
-                <div class="integration-controls"><button id="audit-refresh">Refresh</button><button id="audit-verify">Verify hash chain</button><button id="audit-export">Export JSON</button></div><pre id="audit-result" class="integration-result"></pre><div class="overflow-x-auto">
+                <div class="integration-controls"><button id="audit-refresh">Refresh</button><button id="audit-verify">Verify hash chain</button><button id="audit-export">Export JSON</button></div><div id="audit-result" class="trace-result" aria-live="polite"></div><div class="overflow-x-auto">
                     <table class="w-full text-left font-mono text-xs">
                         <thead>
                             <tr class="border-b border-slate-700/50 text-slate-400 text-[10px] uppercase">
@@ -634,7 +634,7 @@ RETURN path, sub.capacity_mw;</pre>
                 </form>
                 <p id="ask-grid-status" class="feature-status" role="status"></p>
                 <div class="feature-grid"><article class="feature-card"><h3>Answer</h3><p id="ask-grid-answer">Ask a question to see a response.</p></article><article class="feature-card"><h3>Query evidence</h3><div id="ask-grid-meta" class="feature-meta">No query yet.</div><pre id="ask-grid-cypher" class="feature-pre"></pre></article></div>
-                <details class="feature-card"><summary>Query rows</summary><pre id="ask-grid-rows" class="feature-pre"></pre></details>
+                <details class="feature-card"><summary>Query rows</summary><div id="ask-grid-rows" class="trace-result"></div></details>
             </section>
 
             <section id="scada-page-networks" class="hidden scada-surface feature-page">
@@ -660,6 +660,6 @@ RETURN path, sub.capacity_mw;</pre>
         </div>
     </div>
 
-    <script src="assets/grid-icons.js?v=82017f277623"></script><script src="assets/world.js?v=02948cf97b12"></script><script src="assets/app.js?v=366b6e435ad9"></script><script src="assets/features.js?v=faf495b6b9db"></script>
+    <script src="assets/grid-icons.js?v=82017f277623"></script><script src="assets/world.js?v=02948cf97b12"></script><script src="assets/app.js?v=b93d28834552"></script><script src="assets/features.js?v=6165cd3bef0a"></script>
 </body>
 </html>

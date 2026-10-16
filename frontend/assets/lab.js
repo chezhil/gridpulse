@@ -38,6 +38,13 @@
     return data;
   }
   const busy = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message); } finally { btn.disabled = false; } };
+  // Human-readable plan / arguments instead of raw JSON.
+  const planText = (p) => {
+    if (!p) return '—';
+    const steps = [...Object.entries(p.bess_dispatch || {}).map(([k, v]) => `${k} → ${fmt(v)} MW`), ...(p.trip_breakers || []).map((b) => `open ${b}`), ...(p.shed_loads || []).map((l) => `shed ${l}`)];
+    return steps.join(' · ') || 'no action';
+  };
+  const argsText = (o) => Object.entries(o || {}).map(([k, v]) => `${k}=${Array.isArray(v) ? v.map((x) => typeof x === 'object' ? Object.values(x).join(':') : x).join(',') : typeof v === 'object' && v ? JSON.stringify(v) : v}`).join('  ') || '(no arguments)';
   const pill = (txt, cls) => `<span class="pill ${cls}">${esc(txt)}</span>`;
   const outcomePill = (o) => pill(o, o === 'WITHIN_LIMITS' || o === 'MITIGATED' || o === 'SAVED' || o === 'APPROVED' || o === 'NOT_NEEDED' ? 'ok' : o === 'ISLANDING_PREDICTED' || o === 'NOT_SAVEABLE' || o === 'FAILED' || o === 'REJECTED' ? 'bad' : 'warn');
 
@@ -131,7 +138,7 @@
     topo.nodes.forEach((n) => { if (!pos[n.id]) pos[n.id] = { x: subX, y: 200 }; });
     return (node) => pos[node.id()] || { x: 0, y: 0 };
   }
-  const describe = (el) => toast(`${el.data('kind')} ${el.id()}\n${JSON.stringify(el.data('props'), null, 1).slice(0, 600)}`, true);
+  const describe = (el) => toast(`${el.data('kind')} ${el.id()}\n${Object.entries(el.data('props') || {}).filter(([, v]) => v !== null && v !== undefined && typeof v !== 'object').map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n').slice(0, 600)}`, true);
 
   // ---------------- live ops ----------------
   let ws = null, liveTopo = null, wsDelay = 1000;
@@ -181,9 +188,9 @@
   function stepHtml(x) {
     const head = { start: '▶ Fault', context: `📚 Graph briefing: ${esc(x.tool)}`, wait: '⏳ Waiting', thought: '💭 Model', tool: `🔧 ${esc(x.tool)}`, tool_error: `⚠ ${esc(x.tool)} error`, submit: '📝 Plan submitted', verdict: `⚖ Graph guard: ${esc(x.verdict)}`, fallback: '↩ Fallback', done: '✅ Done' }[x.kind] || esc(x.kind);
     let body = '';
-    if (x.kind === 'tool' || x.kind === 'context') body = `<div class="mono">${esc(JSON.stringify(x.input))}</div><div>${esc(x.result)} <span class="muted">(${fmt(x.server_ms, 3)} ms graph)</span></div>` +
+    if (x.kind === 'tool' || x.kind === 'context') body = `<div class="mono">${esc(argsText(x.input))}</div><div>${esc(x.result)} <span class="muted">(${fmt(x.server_ms, 3)} ms graph)</span></div>` +
       (x.cypher?.length ? `<details><summary>Cypher & evidence</summary><pre>${esc(x.cypher.join('\n\n'))}\n\n${esc((x.evidence_hashes || []).join('\n'))}</pre></details>` : '');
-    else if (x.kind === 'submit') body = `<div>${esc(x.summary)}</div><div class="mono">${esc(JSON.stringify(x.plan))}</div>`;
+    else if (x.kind === 'submit') body = `<div>${esc(x.summary)}</div><div class="mono">${esc(planText(x.plan))}</div>`;
     else if (x.kind === 'verdict') body = `<div>${esc(x.summary || '')}</div>${x.reasons?.length ? `<div class="bad mono">${esc(x.reasons.join('; '))}</div>` : ''}`;
     else body = `<div>${esc(x.text || x.error || '')}</div>`;
     return `<div class="step ${esc(x.kind)}"><b>${head}</b> <span class="muted small">${esc((x.at || '').slice(11, 19))}</span>${body}</div>`;
@@ -488,9 +495,9 @@
     try {
       const r = await api('/api/mcp/agent/advise', { method: 'POST', body: JSON.stringify({ question: $('q').value, execute: $('exec').checked }) });
       $('agentOut').innerHTML = `<p>${outcomePill(r.validation.verdict)} ${esc(r.summary)}</p><p class="muted">${esc(r.rationale)}</p>
-        <div class="mono">${esc(JSON.stringify(r.plan))}</div>${r.validation.reasons.length ? `<p class="bad">${esc(r.validation.reasons.join('; '))}</p>` : ''}
+        <div class="mono">${esc(planText(r.plan))}</div>${r.validation.reasons.length ? `<p class="bad">${esc(r.validation.reasons.join('; '))}</p>` : ''}
         <p class="muted small">${esc(r.model)} · ${r.usage.input_tokens}+${r.usage.output_tokens} tokens · ${r.elapsed_s}s · audit ${esc(r.audit_id)}${r.executed?.length ? ` · executed ${r.executed.length} action(s)` : ''}${r.execution_blocked ? ` · execution blocked: ${esc(r.execution_blocked.join('; '))}` : ''}</p>`;
-      $('agentCalls').innerHTML = r.tool_calls.map((c) => `<div class="step ${c.error ? 'tool_error' : ''}"><b>🔧 ${esc(c.tool)}</b><div class="mono">${esc(JSON.stringify(c.input))}</div>${c.error ? `<div class="bad">${esc(c.error)}</div>` : `<div class="muted mono">${esc((c.evidence_hashes || []).join(' '))}</div>`}</div>`).join('');
+      $('agentCalls').innerHTML = r.tool_calls.map((c) => `<div class="step ${c.error ? 'tool_error' : ''}"><b>🔧 ${esc(c.tool)}</b><div class="mono">${esc(argsText(c.input))}</div>${c.error ? `<div class="bad">${esc(c.error)}</div>` : `<div class="muted mono">${esc((c.evidence_hashes || []).join(' '))}</div>`}</div>`).join('');
     } catch (e) {
       $('agentOut').innerHTML = `<p class="bad">${esc(e.message)}</p>${e.status === 503 ? '<p class="muted">Set GROQ_API_KEY in .env and restart the backend to enable the agent.</p>' : ''}`;
     }
@@ -517,7 +524,7 @@
           return `<div title="#${n + 1} ${esc(i.signature)}\n${esc(i.source)} ${esc(i.status)}\nsteps ${i.steps ?? '?'} · ${i.mitigation_ms ?? '?'} ms · shed ${i.shed_mw ?? 0} MW${i.learned_from ? '\nfrom playbook ' + esc(i.learned_from) : ''}" style="flex:0 0 16px;height:${h}px;background:${color};border-radius:3px 3px 0 0"></div>`;
         }).join('') + '</div><p class="small muted">Bar height = decision steps per incident (lower is faster). Hover a bar for details.</p>' : '<p class="muted">No incidents yet. Run scenarios in Live Ops, or Rehearse a network in Test Cases.</p>';
       $('memInc').innerHTML = inc.length ? `<table><tr><th>#</th><th>Trigger</th><th>How</th><th>Outcome</th><th>Steps</th><th>ms</th><th>Shed MW</th></tr>${inc.slice().reverse().slice(0, 40).map((i, k) => `<tr><td>${inc.length - k}</td><td class="mono">${esc(i.signature)}</td><td>${esc(i.source)}${i.learned_from ? `<div class="small ok">↺ ${esc(i.learned_from)}</div>` : ''}</td><td>${outcomePill(i.status)}</td><td>${i.steps ?? '—'}</td><td>${i.mitigation_ms ?? '—'}</td><td>${i.shed_mw ?? 0}</td></tr>`).join('')}</table>` : '';
-      $('memPb').innerHTML = data.playbooks.length ? `<table><tr><th>Trigger</th><th>W/L</th><th>Generalised</th><th>Plan</th><th></th></tr>${data.playbooks.map((p) => `<tr><td class="mono">${esc(p.signature)}</td><td><span class="ok">${p.success_count}</span>/<span class="bad">${p.failure_count}</span></td><td>${p.generalized || 0}</td><td class="mono">${p.plan ? esc(JSON.stringify(p.plan)) : '<span class="muted">no working plan</span>'}</td><td>${p.retired ? pill('retired', 'bad') : ''}</td></tr>`).join('')}</table>` : '<p class="muted">No playbooks yet.</p>';
+      $('memPb').innerHTML = data.playbooks.length ? `<table><tr><th>Trigger</th><th>W/L</th><th>Generalised</th><th>Plan</th><th></th></tr>${data.playbooks.map((p) => `<tr><td class="mono">${esc(p.signature)}</td><td><span class="ok">${p.success_count}</span>/<span class="bad">${p.failure_count}</span></td><td>${p.generalized || 0}</td><td class="mono">${p.plan ? esc(planText(p.plan)) : '<span class="muted">no working plan</span>'}</td><td>${p.retired ? pill('retired', 'bad') : ''}</td></tr>`).join('')}</table>` : '<p class="muted">No playbooks yet.</p>';
     } catch (e) { toast('Memory: ' + e.message); }
   }
   $('memLoad').onclick = () => busy($('memLoad'), loadMemory);
@@ -526,7 +533,7 @@
     if ($('memTarget').value !== 'live') throw new Error('Suggestions lookup runs on the live grid; for networks use Test Cases (memory is used automatically)');
     const r = await api(`/api/graph/memory/suggest?origin_id=${encodeURIComponent($('recallId').value.trim().toUpperCase())}`);
     $('recallOut').innerHTML = `<p>anchors ${esc(r.anchors.join(', '))} · ${r.considered} playbooks considered · ${fmt(r.timing.graph_server_ms, 3)} ms</p>` +
-      (r.suggestions.length ? r.suggestions.map((sg) => `<div class="case">${pill(`score ${sg.score}`, sg.exact ? 'ok' : 'warn')} <span class="mono">${esc(sg.signature)}</span><div>${esc(sg.why)}</div><div class="mono small">${esc(JSON.stringify(sg.plan))}</div></div>`).join('') : '<p class="muted">Nothing similar in memory yet.</p>');
+      (r.suggestions.length ? r.suggestions.map((sg) => `<div class="case">${pill(`score ${sg.score}`, sg.exact ? 'ok' : 'warn')} <span class="mono">${esc(sg.signature)}</span><div>${esc(sg.why)}</div><div class="mono small">${esc(planText(sg.plan))}</div></div>`).join('') : '<p class="muted">Nothing similar in memory yet.</p>');
   });
 
   // ---------------- ask the grid ----------------
