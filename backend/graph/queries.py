@@ -29,7 +29,7 @@ from .client import (
 from .contingency import scan_n1
 from .thermal import project_loading
 
-DEFAULT_MAX_HOPS = 6
+DEFAULT_MAX_HOPS = 10  # HYDRO_ALPINE_01 -> SUB_METRO is the longest corridor path (10 hops)
 MAX_HOPS_LIMIT = 12
 DEFAULT_THRESHOLD_PCT = 95.0
 DEFAULT_MIN_SOC_PCT = 40.0
@@ -309,8 +309,10 @@ def _parse_trips(assume_tripped: Optional[Iterable[Any]]) -> List[Tuple[str, str
     for item in assume_tripped or []:
         if isinstance(item, dict):
             span_id, circuit = item.get("span_id"), item.get("circuit")
-        else:
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
             span_id, circuit = item
+        else:
+            raise InvalidRequestError("assume_tripped items must be {span_id, circuit}", value=item)
         validate_id(span_id, "assume_tripped.span_id")
         if circuit not in topo.CIRCUITS:
             raise InvalidRequestError(f"circuit must be one of {list(topo.CIRCUITS)}", value=circuit)
@@ -346,7 +348,8 @@ def trace_cascade(
 
     start = origin["start_node_id"]
     nodes = [{"id": start, "label": origin["start_label"], "hops": 0, "path": [start], "status": None}]
-    nodes += reach["nodes"]
+    # In a directed loop the start node comes back at a later hop; it is already listed at hop 0.
+    nodes += [n for n in reach["nodes"] if n["id"] != start]
 
     downstream_sub_ids = [n["id"] for n in nodes if n["label"] == "Substation"]
     outcomes = [origin_q, reach_q, snap_q]
@@ -669,8 +672,13 @@ def evaluate_plan(
     evidence: List[Dict[str, Any]] = []
     deenergize: List[str] = []
     breaker_checks = []
+    seen_breakers = set()
     for b in breakers:
         validate_id(b, "trip_breakers[]")
+        if b in seen_breakers:
+            reasons.append(f"{b}: DUPLICATE_BREAKER")
+            continue
+        seen_breakers.add(b)
         check = check_breaker(b, client)
         evidence += check["evidence"]
         breaker_checks.append({k: check[k] for k in ("breaker_id", "trip_allowed", "reasons", "shed_mw")})
@@ -689,6 +697,10 @@ def evaluate_plan(
             reasons.append(f"{bid}: UNKNOWN_BESS")
             continue
         mw = _validate_number(mw, f"bess_dispatch.{bid}", 0.0, 10_000.0)
+        if mw <= 0:
+            # The simulator only accepts a positive setpoint; omit the battery instead of sending 0.
+            reasons.append(f"{bid}: NON_POSITIVE_DISPATCH")
+            continue
         if b.get("soc_pct") is None or b["soc_pct"] <= min_soc_pct:
             reasons.append(f"{bid}: SOC_AT_OR_BELOW_MINIMUM")
         if b.get("status") not in ("STANDBY", "DISCHARGING"):
@@ -704,7 +716,7 @@ def evaluate_plan(
     tier1 = [c for c in snapshot["consumers"] if c.get("priority_tier") == 1]
     tier1_out = []
     for c in tier1:
-        supplied = sub_status.get(c["substation_id"]) not in (None, "ISLANDED") and c["id"] not in deenergize and c["energized"]
+        supplied = bool(sub_status.get(c["substation_id"]) not in (None, "ISLANDED") and c["id"] not in deenergize and c["energized"])
         tier1_out.append({"id": c["id"], "supplied": supplied, "substation_status": sub_status.get(c["substation_id"])})
         if not supplied:
             reasons.append(f"{c['id']}: TIER1_LOSES_SUPPLY")

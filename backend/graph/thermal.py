@@ -32,9 +32,10 @@ Model ``dc-pf/1`` (linear DC power flow, see :mod:`graph.powerflow`):
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-from .client import GraphDataError
+from .client import GraphDataError, InvalidRequestError
 from .powerflow import Branch, Network
 
 MODEL_ID = "dc-pf/1"
@@ -90,12 +91,12 @@ def _apply_overrides(snapshot: Dict[str, Any], overrides: Optional[Dict[str, Any
         return consumers, bess, applied
     unknown_keys = sorted(set(overrides) - {"bess_injection_mw", "deenergized_consumers", "demand_scale"})
     if unknown_keys:
-        raise GraphDataError("Unknown override keys", unknown=unknown_keys)
+        raise InvalidRequestError("Unknown override keys", unknown=unknown_keys)
 
     scale = overrides.get("demand_scale")
     if scale is not None:
-        if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not 0 < scale <= 5:
-            raise GraphDataError("demand_scale must be a number in (0, 5]", value=scale)
+        if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not math.isfinite(scale) or not 0 < scale <= 5:
+            raise InvalidRequestError("demand_scale must be a number in (0, 5]", value=scale)
         for c in consumers:
             if c.get("mw_demand") is not None:
                 c["mw_demand"] = float(c["mw_demand"]) * scale
@@ -105,11 +106,12 @@ def _apply_overrides(snapshot: Dict[str, Any], overrides: Optional[Dict[str, Any
     injections = overrides.get("bess_injection_mw") or {}
     unknown = sorted(set(injections) - set(by_id))
     if unknown:
-        raise GraphDataError("bess_injection_mw references BESS units that are not in the graph", unknown=unknown)
+        raise InvalidRequestError("bess_injection_mw references BESS units that are not in the graph", unknown=unknown)
     for bid, mw in injections.items():
         limit = by_id[bid].get("max_discharge_mw")
-        if not isinstance(mw, (int, float)) or mw < 0 or (limit is not None and mw > limit):
-            raise GraphDataError("bess_injection_mw must be between 0 and max_discharge_mw", id=bid, value=mw, limit=limit)
+        if (isinstance(mw, bool) or not isinstance(mw, (int, float)) or not math.isfinite(mw) or mw < 0
+                or (limit is not None and mw > limit)):
+            raise InvalidRequestError("bess_injection_mw must be between 0 and max_discharge_mw", id=bid, value=mw, limit=limit)
         by_id[bid]["active_injection_mw"] = float(mw)
     if injections:
         applied["bess_injection_mw"] = {k: float(v) for k, v in sorted(injections.items())}
@@ -117,7 +119,7 @@ def _apply_overrides(snapshot: Dict[str, Any], overrides: Optional[Dict[str, Any
     off = set(overrides.get("deenergized_consumers") or [])
     unknown = sorted(off - {c["id"] for c in consumers})
     if unknown:
-        raise GraphDataError("deenergized_consumers references consumers that are not in the graph", unknown=unknown)
+        raise InvalidRequestError("deenergized_consumers references consumers that are not in the graph", unknown=unknown)
     for c in consumers:
         if c["id"] in off:
             c["energized"] = False
@@ -145,7 +147,7 @@ def project_loading(
     known = {(c["span_id"], c["circuit"]) for c in snapshot["circuits"]}
     unknown = sorted(f"{s}:{c}" for s, c in assumed - known)
     if unknown:
-        raise GraphDataError("assume_tripped references circuits that are not in the graph", unknown=unknown)
+        raise InvalidRequestError("assume_tripped references circuits that are not in the graph", unknown=unknown)
     consumers, bess, applied_overrides = _apply_overrides(snapshot, overrides)
 
     circuits = []

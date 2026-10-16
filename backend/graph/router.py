@@ -89,11 +89,13 @@ class TraceCascadeRequest(BaseModel):
 
 
 class WhatIfOverrides(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     bess_injection_mw: Dict[str, float] = Field(default_factory=dict, examples=[{"BESS_METRO_01": 45.0}])
     deenergized_consumers: List[str] = Field(default_factory=list, max_length=50, examples=[["IND_METRO_12"]])
 
 
 class PlanRequest(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     trip_breakers: List[str] = Field(default_factory=list, max_length=20, examples=[["BRK_IND_12"]])
     bess_dispatch: Dict[str, float] = Field(default_factory=dict, examples=[{"BESS_METRO_01": 45.0}])
     threshold_pct: float = Field(queries.DEFAULT_THRESHOLD_PCT, ge=1, le=150)

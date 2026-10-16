@@ -90,7 +90,8 @@ def test_missing_property_is_explicit(snapshot):
 
 
 def test_unknown_assumed_circuit_is_rejected(snapshot):
-    with pytest.raises(GraphDataError):
+    from graph.client import InvalidRequestError
+    with pytest.raises(InvalidRequestError):
         project_loading(snapshot, [("TX_999", "UPPER_PRIMARY")])
 
 

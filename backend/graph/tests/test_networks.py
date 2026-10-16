@@ -149,8 +149,7 @@ def test_simulate_rejects_bad_cases(reg, live_client):
     for bad in ([], [{"type": "chaos"}], [{"trip": [{"span_id": "RL1", "circuit": "MIDDLE"}]}], [{"bogus": 1}]):
         with pytest.raises(InvalidRequestError):
             nw.simulate(owner, nid, bad, base=live_client)
-    from graph.client import GraphDataError
-    with pytest.raises(GraphDataError):
+    with pytest.raises(InvalidRequestError):
         nw.simulate(owner, nid, [{"trip": [{"span_id": "NOPE"}]}], base=live_client)
 
 
@@ -175,3 +174,23 @@ def test_layout_is_kept_and_filtered():
     spec["layout"] = {"R1": {"x": 10, "y": 20.04}, "GHOST": {"x": 1, "y": 1}, "R2": {"x": "a", "y": 2}}
     out, _ = nw.validate_spec(spec)
     assert out["layout"] == {"R1": {"x": 10.0, "y": 20.0}}
+
+
+def test_cyclic_trace_lists_start_once(reg, live_client):
+    owner = reg()
+    nid = nw.create_network(owner, nw.get_template("ring"), live_client)["id"]
+    t = trace_cascade("R1", max_hops=8, client=nw.owned_client(owner, nid, live_client))
+    ids = [n["id"] for n in t["reachability"]["nodes"]]
+    assert ids.count("R1") == 1 and len(ids) == len(set(ids))
+
+
+def test_spec_rejects_values_the_graph_cannot_store():
+    def problems_for(mutate):
+        spec = nw.get_template("ring")
+        mutate(spec)
+        with pytest.raises(InvalidRequestError) as exc:
+            nw.validate_spec(spec)
+        return " ".join(exc.value.details.get("problems", [])) or str(exc.value)
+    assert "feeder_id" in problems_for(lambda s: s["loads"][0].update(feeder_id={"a": 1}))
+    assert "priority_tier" in problems_for(lambda s: s["loads"][0].update(priority_tier=True))
+    assert "already used" in problems_for(lambda s: s["lines"][0].update(id="R2"))

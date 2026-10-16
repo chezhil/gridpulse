@@ -187,7 +187,10 @@ class GraphClient:
     def ping(self) -> bool:
         try:
             self._ensure_graph(attempts=1)
-            self._db.connection.ping()
+            db = self._db  # another thread may drop the connection between these two lines
+            if db is None:
+                return False
+            db.connection.ping()
             return True
         except (GraphUnavailableError, *_CONNECTION_ERRORS):
             return False

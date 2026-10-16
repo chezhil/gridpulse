@@ -60,9 +60,10 @@ def parse_matpower(text: str) -> Dict[str, Any]:
             if not raw:
                 continue
             try:
-                rows.append([float(x) for x in re.split(r"[\s,]+", raw) if x])
+                row = [float(x) for x in re.split(r"[\s,]+", raw) if x]
             except ValueError as exc:
                 raise InvalidRequestError(f"mpc.{name}: non-numeric value in row '{raw[:60]}'") from exc
+            rows.append(row)
         out[name] = rows
     missing = [k for k in ("bus", "gen", "branch") if not out.get(k)]
     if missing:
@@ -95,6 +96,15 @@ def matpower_to_spec(
     buses = [r for r in mpc["bus"] if int(r[BUS_TYPE]) != ISOLATED]
     if len(mpc["bus"]) != len(buses):
         notes.append(f"skipped {len(mpc['bus']) - len(buses)} isolated bus(es)")
+    if not buses:
+        raise InvalidRequestError("MATPOWER case has no connected buses")
+    # Unused columns may hold nan (real case files do); the ones read here must be numbers.
+    # Inf is allowed only where MATPOWER means "no limit".
+    for name, finite, not_nan in (("bus", (BUS_I, BUS_TYPE, PD), ()), ("gen", (GEN_BUS, PG, GEN_STATUS), (PMAX,)),
+                                  ("branch", (F_BUS, T_BUS, BR_X, TAP, SHIFT, BR_STATUS), (RATE_A,))):
+        if any(not math.isfinite(r[c]) for r in mpc[name] for c in finite) or \
+                any(math.isnan(r[c]) for r in mpc[name] for c in not_nan):
+            raise InvalidRequestError(f"mpc.{name}: bus numbers, status, power and rating columns must be numbers")
     numbers = [int(r[BUS_I]) for r in buses]
     width = max(3, len(str(max(numbers))))
     known = set(numbers)
@@ -121,6 +131,12 @@ def matpower_to_spec(
             g["pmax"] += -mw
             del load_mw[b]
             notes.append(f"bus {b}: negative load modelled as generation")
+    # And negative generation (pumped storage, synchronous condensers) is a load.
+    for b, g in gens.items():
+        if g["pg"] < 0:
+            load_mw[b] = load_mw.get(b, 0.0) - g["pg"]
+            g["pg"] = 0.0
+            notes.append(f"bus {b}: negative generation modelled as load")
     if not gens:
         raise InvalidRequestError("case has no in-service generators")
     slack = refs[0] if refs and refs[0] in gens else max(gens, key=lambda b: gens[b]["pmax"])

@@ -333,3 +333,27 @@ def test_benchmark_engines_agree(live_client, tmp_path, monkeypatch):
     for engine in ("falkordb_cypher", "falkordb_bfs", "sqlite_recursive"):
         assert r["engines"][engine]["engine_time"]["median_ms"] > 0
     assert r["n1_lodf"]["branches"] == r["grid"]["lines"]
+
+
+def test_evaluate_plan_rejects_duplicates_and_zero_dispatch(graph):
+    # Both pass every guard on unchanged state but the actuators would refuse them part-way.
+    apply_state_update({"spans": [LIGHTNING_TRIP]}, graph)
+    dup = evaluate_plan({"trip_breakers": ["BRK_IND_12", "BRK_IND_12"], "bess_dispatch": {"BESS_METRO_01": 45.0}}, client=graph)
+    assert dup["verdict"] == "REJECTED" and "BRK_IND_12: DUPLICATE_BREAKER" in dup["reasons"]
+    zero = evaluate_plan({"trip_breakers": ["BRK_IND_12"], "bess_dispatch": {"BESS_METRO_01": 0}}, client=graph)
+    assert zero["verdict"] == "REJECTED" and "BESS_METRO_01: NON_POSITIVE_DISPATCH" in zero["reasons"]
+    assert all(isinstance(t["supplied"], bool) for t in dup["tier1"])
+    with pytest.raises(InvalidRequestError):
+        trace_cascade("TX_882", assume_tripped=[["TX_882"]], client=graph)
+
+
+@pytest.mark.parametrize("origin", ["TX_880", "HYDRO_ALPINE_01"])
+def test_default_hops_reach_sub_metro_from_far_origins(graph, origin):
+    r = trace_cascade(origin, client=graph)
+    assert "SUB_METRO" in r["summary"]["downstream_substations"]
+    assert r["reachability"]["beyond_max_hops"] == []
+
+
+def test_unknown_assumed_circuit_is_a_request_error(graph):
+    with pytest.raises(InvalidRequestError):
+        trace_cascade("TX_882", assume_tripped=[("TX_999", "UPPER_PRIMARY")], client=graph)

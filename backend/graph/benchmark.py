@@ -29,13 +29,14 @@ import json
 import os
 import sqlite3
 import statistics
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 import numpy as np
 
-from .client import GraphClient, GraphNotSeededError, GraphSettings, InvalidRequestError, get_client
+from .client import GraphClient, GraphDataError, GraphNotSeededError, GraphSettings, InvalidRequestError, get_client
 from .powerflow import Branch, Network
 from .synthetic import SyntheticGrid, benchmark_origins, generate
 
@@ -63,9 +64,24 @@ def _bench_dir() -> Path:
     return path
 
 
+_CLIENTS: Dict[Any, GraphClient] = {}
+# One benchmark per grid size at a time: concurrent runs would drop and rebuild the same graph under each other.
+_SIZE_LOCKS: Dict[int, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
 def _graph_client(base: GraphClient, grid: SyntheticGrid) -> GraphClient:
     settings = GraphSettings(**{**base.settings.__dict__, "graph_name": grid.graph_name})
-    return GraphClient(settings)
+    key = tuple(sorted(settings.__dict__.items()))
+    with _LOCKS_GUARD:
+        if key not in _CLIENTS:
+            _CLIENTS[key] = GraphClient(settings)
+        return _CLIENTS[key]
+
+
+def _size_lock(size: int) -> threading.Lock:
+    with _LOCKS_GUARD:
+        return _SIZE_LOCKS.setdefault(size, threading.Lock())
 
 
 def _stamp(grid: SyntheticGrid) -> str:
@@ -169,24 +185,7 @@ def _n1_lodf(grid: SyntheticGrid, threshold: float = 0.95) -> Dict[str, Any]:
     }
 
 
-def run_benchmark(
-    size: int, runs: int = 20, origins: int = 10, client: Optional[GraphClient] = None, max_hops: int = MAX_HOPS
-) -> Dict[str, Any]:
-    if size not in ALLOWED_SIZES:
-        raise InvalidRequestError(f"size must be one of {list(ALLOWED_SIZES)}", value=size)
-    if isinstance(runs, bool) or not isinstance(runs, int) or not 1 <= runs <= 200:
-        raise InvalidRequestError("runs must be an integer between 1 and 200", value=runs)
-    if isinstance(origins, bool) or not isinstance(origins, int) or not 1 <= origins <= 50:
-        raise InvalidRequestError("origins must be an integer between 1 and 50", value=origins)
-    if isinstance(max_hops, bool) or not isinstance(max_hops, int) or not HOPS_RANGE[0] <= max_hops <= HOPS_RANGE[1]:
-        raise InvalidRequestError(f"max_hops must be an integer between {HOPS_RANGE[0]} and {HOPS_RANGE[1]}", value=max_hops)
-    cypher_varlen = CYPHER_VARLEN.format(hops=max_hops)
-    cypher_bfs = CYPHER_BFS.format(hops=max_hops)
-    sql_recursive = SQL_RECURSIVE.format(hops=max_hops)
-    grid = generate(size)
-    gclient = _graph_client(client or get_client(), grid)
-    load = load_falkordb(gclient, grid)
-    conn = load_sqlite(grid)
+def _measure(gclient, conn, grid, origins, runs, cypher_varlen, cypher_bfs, sql_recursive):
     starts = benchmark_origins(grid, origins)
 
     # Correctness first: all engines must agree on every origin.
@@ -196,7 +195,7 @@ def run_benchmark(
         b = set(gclient.query("bench_bfs", cypher_bfs, {"id": o}).rows[0]["ids"])
         c: Set[str] = {r[0] for r in conn.execute(sql_recursive, (o,))}
         if not (a == b == c):
-            raise RuntimeError(f"engines disagree for origin {o}: cypher={len(a)} bfs={len(b)} sql={len(c)}")
+            raise GraphDataError(f"engines disagree for origin {o}: cypher={len(a)} bfs={len(b)} sql={len(c)}")
         reach_sizes.append(len(a))
 
     timings: Dict[str, Dict[str, List[float]]] = {
@@ -215,7 +214,32 @@ def run_benchmark(
         elapsed = (time.perf_counter() - started) * 1000.0
         timings["sqlite_recursive"]["server"].append(elapsed)
         timings["sqlite_recursive"]["roundtrip"].append(elapsed)
-    conn.close()
+    return starts, reach_sizes, timings
+
+
+def run_benchmark(
+    size: int, runs: int = 20, origins: int = 10, client: Optional[GraphClient] = None, max_hops: int = MAX_HOPS
+) -> Dict[str, Any]:
+    if size not in ALLOWED_SIZES:
+        raise InvalidRequestError(f"size must be one of {list(ALLOWED_SIZES)}", value=size)
+    if isinstance(runs, bool) or not isinstance(runs, int) or not 1 <= runs <= 200:
+        raise InvalidRequestError("runs must be an integer between 1 and 200", value=runs)
+    if isinstance(origins, bool) or not isinstance(origins, int) or not 1 <= origins <= 50:
+        raise InvalidRequestError("origins must be an integer between 1 and 50", value=origins)
+    if isinstance(max_hops, bool) or not isinstance(max_hops, int) or not HOPS_RANGE[0] <= max_hops <= HOPS_RANGE[1]:
+        raise InvalidRequestError(f"max_hops must be an integer between {HOPS_RANGE[0]} and {HOPS_RANGE[1]}", value=max_hops)
+    cypher_varlen = CYPHER_VARLEN.format(hops=max_hops)
+    cypher_bfs = CYPHER_BFS.format(hops=max_hops)
+    sql_recursive = SQL_RECURSIVE.format(hops=max_hops)
+    grid = generate(size)
+    gclient = _graph_client(client or get_client(), grid)
+    with _size_lock(size):
+        load = load_falkordb(gclient, grid)
+        conn = load_sqlite(grid)
+        try:
+            starts, reach_sizes, timings = _measure(gclient, conn, grid, origins, runs, cypher_varlen, cypher_bfs, sql_recursive)
+        finally:
+            conn.close()
 
     engines = {
         name: {"engine_time": _stats(t["server"]), "client_roundtrip": _stats(t["roundtrip"])}

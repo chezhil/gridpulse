@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import json
 import math
+import logging
 import re
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -38,6 +40,7 @@ MAX_NETWORKS_PER_OWNER = 25
 MAX_CASES = 25
 BATCH = 2000
 
+log = logging.getLogger(__name__)
 _ID = re.compile(r"^[A-Z0-9_]{1,40}$")
 CATEGORY_BY_TIER = {1: "HOSPITAL", 2: "RESIDENTIAL", 3: "INDUSTRIAL"}
 
@@ -142,13 +145,8 @@ def validate_spec(spec: Any) -> Tuple[Dict[str, Any], List[str]]:
         if not isinstance(ln, dict):
             problems.append(f"{where}: must be an object")
             continue
-        lid = ln.get("id")
-        if not isinstance(lid, str) or not _ID.match(lid):
-            problems.append(f"{where}.id: must match {_ID.pattern}")
-            lid = None
-        elif lid in line_ids:
-            problems.append(f"{where}.id: duplicate line id '{lid}'")
-            lid = None
+        # Lines share the id namespace with nodes, so a trace origin id is never ambiguous.
+        lid = claim(ln.get("id"), "line", where)
         src, dst = ln.get("from"), ln.get("to")
         if src not in grid_nodes or dst not in grid_nodes:
             problems.append(f"{where}: from/to must be existing buses or substations (got {src!r} -> {dst!r})")
@@ -182,18 +180,24 @@ def validate_spec(spec: Any) -> Tuple[Dict[str, Any], List[str]]:
             problems.append(f"{where}.substation: '{sub}' is not a substation")
         mw = _num(ld.get("mw_demand"), f"{where}.mw_demand", problems, 0, 1e6)
         tier = ld.get("priority_tier", 2)
-        if tier not in (1, 2, 3):
+        if isinstance(tier, bool) or tier not in (1, 2, 3):
             problems.append(f"{where}.priority_tier: must be 1, 2 or 3")
         category = ld.get("category") or CATEGORY_BY_TIER.get(tier, "COMMERCIAL")
         if category not in topo.CONSUMER_CATEGORIES:
             problems.append(f"{where}.category: must be one of {list(topo.CONSUMER_CATEGORIES)}")
         breaker = ld.get("breaker_id") or (f"BRK_{cid}" if cid else None)
         if breaker is not None and (not isinstance(breaker, str) or not _ID.match(breaker)):
-            problems.append(f"{where}.breaker_id: must match {_ID.pattern}")
-        if cid and sub in sub_ids and mw is not None and tier in (1, 2, 3):
+            problems.append(f"{where}.breaker_id: must match {_ID.pattern}"
+                            + (" (the default BRK_<id> is too long; give breaker_id)" if not ld.get("breaker_id") else ""))
+            breaker = None
+        feeder = ld.get("feeder_id") or (f"FDR_{breaker}"[:40] if breaker else None)
+        if feeder is not None and (not isinstance(feeder, str) or not _ID.match(feeder)):
+            problems.append(f"{where}.feeder_id: must match {_ID.pattern}")
+            feeder = None
+        if cid and sub in sub_ids and mw is not None and tier in (1, 2, 3) and breaker and feeder:
             out["loads"].append({"id": cid, "name": str(ld.get("name") or cid)[:80], "substation": sub, "mw_demand": mw,
                                  "priority_tier": tier, "category": category, "breaker_id": breaker,
-                                 "feeder_id": ld.get("feeder_id") or f"FDR_{breaker}"})
+                                 "feeder_id": feeder})
 
     out["batteries"] = []
     for i, bt in enumerate(spec.get("batteries") or []):
@@ -332,14 +336,34 @@ def build_graph(client: GraphClient, spec: Dict[str, Any]) -> Dict[str, int]:
 # --------------------------------------------------------------------------- #
 
 
-def _registry(base: Optional[GraphClient] = None) -> GraphClient:
+_CLIENTS: Dict[Tuple[Any, ...], GraphClient] = {}
+_CLIENTS_LOCK = threading.Lock()
+
+
+def _client_for(graph_name: str, base: Optional[GraphClient] = None) -> GraphClient:
+    """One cached client (and connection pool) per graph, instead of a new pool on every request."""
     base = base or get_client()
-    return GraphClient(GraphSettings(**{**base.settings.__dict__, "graph_name": REGISTRY_GRAPH}))
+    settings = GraphSettings(**{**base.settings.__dict__, "graph_name": graph_name})
+    key = tuple(sorted(settings.__dict__.items()))
+    with _CLIENTS_LOCK:
+        client = _CLIENTS.get(key)
+        if client is None:
+            client = _CLIENTS[key] = GraphClient(settings)
+        return client
+
+
+def _forget_client(graph_name: str) -> None:
+    with _CLIENTS_LOCK:
+        for key in [k for k, c in _CLIENTS.items() if c.graph_name == graph_name]:
+            del _CLIENTS[key]
+
+
+def _registry(base: Optional[GraphClient] = None) -> GraphClient:
+    return _client_for(REGISTRY_GRAPH, base)
 
 
 def network_client(network_id: str, base: Optional[GraphClient] = None) -> GraphClient:
-    base = base or get_client()
-    return GraphClient(GraphSettings(**{**base.settings.__dict__, "graph_name": GRAPH_PREFIX + network_id.lower()}))
+    return _client_for(GRAPH_PREFIX + network_id.lower(), base)
 
 
 def _registry_rows(reg: GraphClient, cypher: str, params: Dict[str, Any], name: str) -> List[Dict[str, Any]]:
@@ -382,9 +406,18 @@ def create_network(owner: str, spec: Dict[str, Any], base: Optional[GraphClient]
 
 
 def replace_network(owner: str, network_id: str, spec: Dict[str, Any], base: Optional[GraphClient] = None) -> Dict[str, Any]:
-    _owned(owner, network_id, base)
+    old_spec = json.loads(_owned(owner, network_id, base)["spec_json"])
     normalized, warnings = validate_spec(spec)
-    counts = build_graph(network_client(network_id, base), normalized)
+    client = network_client(network_id, base)
+    try:
+        counts = build_graph(client, normalized)
+    except GraphError:
+        # build_graph clears first, so a failure part-way would leave a half-built graph; restore the saved one.
+        try:
+            build_graph(client, old_spec)
+        except GraphError:
+            log.exception("could not restore network %s after a failed replace", network_id)
+        raise
     _registry(base).query("registry_update", "MATCH (n:Network {id: $id, owner: $owner}) SET n.name = $name, n.updated_at = $now, "
                           "n.spec_json = $spec, n.counts_json = $counts, n.warnings_json = $warnings",
                           {"id": network_id, "owner": owner, "name": normalized["name"], "now": _now(),
@@ -409,8 +442,10 @@ def delete_network(owner: str, network_id: str, base: Optional[GraphClient] = No
     client = network_client(network_id, base)
     try:
         client._ensure_graph().delete()
-    except Exception:
-        pass  # already gone
+    except Exception as exc:
+        if "empty key" not in str(exc) and "Invalid graph" not in str(exc):
+            log.warning("could not delete graph for network %s: %s", network_id, exc)
+    _forget_client(client.graph_name)
     _registry(base).query("registry_delete", "MATCH (n:Network {id: $id, owner: $owner}) DELETE n",
                           {"id": network_id, "owner": owner}, read_only=False, retries=0)
     return {"deleted": network_id}
@@ -675,6 +710,7 @@ def suggest_mitigation(snapshot: Dict[str, Any], trips: List[Tuple[str, str]], o
         for bid in sorted(plan_bess):
             floor = float(next((b.get("active_injection_mw") or 0.0) for b in snapshot["bess"] if b["id"] == bid))
             lo, hi = floor, plan_bess[bid]
+            ceiling = hi
             while hi - lo > 0.5:
                 mid = (lo + hi) / 2
                 plan_bess[bid] = mid
@@ -682,7 +718,8 @@ def suggest_mitigation(snapshot: Dict[str, Any], trips: List[Tuple[str, str]], o
                     hi = mid
                 else:
                     lo = mid
-            plan_bess[bid] = round(hi, 1)
+            # Round up: rounding down could land below the smallest setpoint proven safe.
+            plan_bess[bid] = min(math.ceil(hi * 10) / 10, ceiling)
             if plan_bess[bid] <= floor:
                 del plan_bess[bid]
         current = project()

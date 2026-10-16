@@ -90,8 +90,11 @@ def test_overrides_apply_bess_and_shedding(snapshot):
 
 
 def test_overrides_are_validated(snapshot):
-    from graph.client import GraphDataError
-    with pytest.raises(GraphDataError):
+    from graph.client import InvalidRequestError
+    with pytest.raises(InvalidRequestError):
         project_loading(snapshot, overrides={"bess_injection_mw": {"BESS_METRO_01": 500.0}})
-    with pytest.raises(GraphDataError):
+    for bad in (float("nan"), float("inf"), True):
+        with pytest.raises(InvalidRequestError):
+            project_loading(snapshot, overrides={"bess_injection_mw": {"BESS_METRO_01": bad}})
+    with pytest.raises(InvalidRequestError):
         project_loading(snapshot, overrides={"deenergized_consumers": ["GHOST"]})

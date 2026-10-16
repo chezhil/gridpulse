@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 
 from backend.auth.router import OperatorSession, verify_operator_token
 
@@ -33,6 +33,7 @@ class NetworkSpecBody(BaseModel):
 
 
 class TestCase(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     name: Optional[str] = Field(None, max_length=80)
     type: str = Field("scenario", description="'scenario' or 'n1'")
     trip: List[Dict[str, Any]] = Field(default_factory=list, examples=[[{"span_id": "TX_882", "circuit": "UPPER_PRIMARY"}]])
@@ -48,7 +49,7 @@ class SimulateBody(BaseModel):
 
 class NetworkTrace(BaseModel):
     origin_id: str = Field(pattern=r"^[A-Z0-9_]{1,40}$")
-    max_hops: int = Field(6, ge=1, le=queries.MAX_HOPS_LIMIT)
+    max_hops: int = Field(queries.DEFAULT_MAX_HOPS, ge=1, le=queries.MAX_HOPS_LIMIT)
     assume_tripped: List[CircuitRef] = Field(default_factory=list, max_length=50)
 
 
@@ -64,6 +65,7 @@ def template(template_id: str) -> Dict[str, Any]:
 
 
 class ConvertBody(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     format: str = Field("matpower", description="'matpower' (.m case file) or 'gridpulse' (spec JSON)")
     content: str = Field(..., max_length=importers.MAX_CONTENT_BYTES)
     name: Optional[str] = Field(None, max_length=80)
