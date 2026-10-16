@@ -135,7 +135,60 @@
   window.triggerFaultSimulation=()=>triggerScenario(activeScenarioId);
   window.resetGrid=()=>{isFaultActive=false;isRerouted=false;say('hud-status-title','ILLUSTRATIVE CORRIDOR · Open console for live data');};
   window.toggleAutoCycle=enabled=>{clearInterval(autoCycleTimer);if(enabled){let id=1;triggerScenario(id);autoCycleTimer=setInterval(()=>triggerScenario(id=id%3+1),5500);}};
-  $('trace-form').onsubmit=e=>{e.preventDefault();guarded(async()=>{say('trace-result','Tracing…');const result=await api('/api/graph/trace-cascade',{method:'POST',body:JSON.stringify({origin_id:$('trace-origin').value.trim().toUpperCase(),max_hops:Number($('trace-hops').value)})});say('trace-result',pretty(result));say('console-cypher-pre',(result.evidence||[]).map(x=>x.cypher).filter(Boolean).join('\n\n')||'No Cypher evidence returned.');}).then(()=>{if($('trace-result').textContent==='Tracing…')say('trace-result','Trace unavailable. See the error above.');});};
+  // Trace results: a readable summary first, the full API response one click away.
+  const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
+  const outcomeTone=o=>/WITHIN_LIMITS|NO_IMPACT/.test(o)?'ok':/ISLANDING/.test(o)?'warn':/OVERLOAD/.test(o)?'bad':'info';
+  function renderTrace(r){
+    const box=$('trace-result');box.replaceChildren();
+    const s=r.summary||{},p=r.projection||{},o=r.origin||{};
+    const head=el('div','trace-head');
+    head.append(el('span',`trace-pill trace-${outcomeTone(s.projection_outcome)}`,(s.projection_outcome||r.outcome||'UNKNOWN').replace(/_/g,' ')));
+    const where=o.kind==='SPAN'?`${o.id} (${o.from} → ${o.to})`:o.id||s.origin_id;
+    const tripped=(p.assumed_tripped||[]).map(t=>Array.isArray(t)?t.join(':'):`${t.span_id}:${t.circuit}`);
+    head.append(el('span','trace-sub',`${where}${tripped.length?` · assuming ${tripped.join(', ')} tripped`:' · current grid state'} · ${r.timing?.query_count??(r.evidence||[]).length} queries in ${r.timing?.graph_server_ms??'—'} ms`));
+    box.append(head);
+    const stats=el('div','trace-stats');
+    for(const [label,value,tone] of [
+      ['Relief needed',s.required_relief_mw?`${s.required_relief_mw} MW`:'None',s.required_relief_mw?'bad':'ok'],
+      ['Downstream assets',`${s.downstream_node_count??0} nodes · ${s.furthest_hop??0} hops`],
+      ['Substations',(s.downstream_substations||[]).join(', ')||'None reached'],
+      ['Tier-1 at risk',(s.tier1_at_risk||[]).join(', ')||'None',(s.tier1_at_risk||[]).length?'bad':'ok']]){
+      const card=el('div',`trace-stat${tone?` trace-${tone}`:''}`);card.append(el('small','',label),el('b','',value));stats.append(card);
+    }
+    box.append(stats);
+    const nodes=r.reachability?.nodes||[],sub=nodes.filter(n=>n.label==='Substation').sort((a,b)=>a.hops-b.hops)[0];
+    const path=sub?.path||nodes.map(n=>n.id);
+    if(path.length){box.append(el('h4','trace-h','Cascade path'),el('div','trace-path',path.join('  →  ')));}
+    if((p.overloads||[]).length){
+      box.append(el('h4','trace-h','Projected overloads'));
+      const list=el('ul','trace-list');
+      for(const ov of p.overloads){const best=(ov.relief_options||[])[0];list.append(el('li','',`${ov.element} at ${ov.loading_pct}% of rating${best?` · relieve ${best.relief_mw} MW at ${best.substation_id}`:''}`));}
+      box.append(list);
+    }
+    const consumers=r.impact?.consumers||[],bess=r.impact?.bess||[];
+    if(consumers.length||bess.length){
+      box.append(el('h4','trace-h','Downstream loads and batteries'));
+      const table=el('table','trace-table'),hdr=table.insertRow();
+      ['Asset','Type','MW','Status'].forEach(h=>hdr.append(el('th','',h)));
+      for(const c of consumers){const row=table.insertRow();[c.name||c.id,`Tier ${c.priority_tier} ${String(c.category||'').toLowerCase()}`,c.mw_demand,c.risk==='NONE'?'OK':c.risk.replace(/_/g,' ')].forEach((v,k)=>{const td=row.insertCell();td.textContent=v??'—';if(k===3&&c.risk!=='NONE')td.className=c.priority_tier===1?'trace-bad':'trace-warn';});}
+      for(const b of bess){const row=table.insertRow();[b.id,'Battery',`${b.active_injection_mw} / ${b.max_discharge_mw}`,`${b.status} · ${b.soc_pct}% SOC`].forEach(v=>row.insertCell().textContent=v??'—');}
+      box.append(table);
+    }
+    if((r.evidence||[]).length){
+      box.append(el('h4','trace-h','FalkorDB queries'));
+      const list=el('ul','trace-list trace-mono');
+      for(const ev of r.evidence)list.append(el('li','',`${ev.name} · ${ev.row_count} rows · ${ev.server_ms} ms · ${String(ev.evidence_hash||'').slice(0,19)}…`));
+      box.append(list);
+    }
+    const raw=el('details','trace-raw'),sum=el('summary','','Raw API response (JSON)'),pre=el('pre','integration-result',pretty(r));
+    raw.append(sum,pre);box.append(raw);
+  }
+  $('trace-form').onsubmit=e=>{e.preventDefault();guarded(async()=>{say('trace-result','Tracing…');
+    const origin=$('trace-origin').value.trim().toUpperCase();
+    // Only spans can trip; towers, plants and substations are traced from their current state.
+    const trip=$('trace-trip').checked&&/^TX_\d+$/.test(origin)?[{span_id:origin,circuit:'UPPER_PRIMARY'}]:[];
+    const result=await api('/api/graph/trace-cascade',{method:'POST',body:JSON.stringify({origin_id:origin,max_hops:Number($('trace-hops').value),assume_tripped:trip})});
+    renderTrace(result);say('console-cypher-pre',(result.evidence||[]).map(x=>`// ${x.name} · ${x.row_count} rows · ${x.server_ms} ms\n${x.cypher}`).filter(Boolean).join('\n\n')||'No Cypher evidence returned.');}).then(()=>{if($('trace-result').textContent==='Tracing…')say('trace-result','Trace unavailable. See the error above.');});};
   $('agent-form').onsubmit=e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit?.disabled)return;guarded(async()=>{say('agent-result','Requesting agent advice…');if(submit)submit.disabled=true;try{const result=await api('/api/mcp/agent/advise',{method:'POST',timeoutMs:180000,body:JSON.stringify({question:$('agent-question').value,execute:$('agent-execute').checked})});say('agent-result',pretty(result));await loadAudit();}catch(error){say('agent-result',error.message);throw error;}finally{if(submit)submit.disabled=false;}});};
   $('audit-refresh').onclick=()=>guarded(loadAudit);
   $('audit-verify').onclick=()=>guarded(async()=>say('audit-result',pretty(await api('/api/audit/verify'))));

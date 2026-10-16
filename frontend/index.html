@@ -13,7 +13,7 @@
 
 
 
-    <link rel="stylesheet" href="assets/design.css?v=1b8bdd802d88">
+    <link rel="stylesheet" href="assets/design.css?v=d13d92c98e03">
 </head>
 <body class="text-slate-100 antialiased selection:bg-sky-500 selection:text-white">
 
@@ -593,7 +593,7 @@ RETURN path, sub.capacity_mw;</pre>
             <!-- Sub-Page 2: Cypher Studio -->
             <div id="scada-page-cypher" class="hidden scada-surface rounded-3xl p-6 space-y-4">
                 <h3 class="font-display font-bold text-xl text-slate-900 dark:text-white">FalkorDB Multi-Hop Cypher Studio</h3>
-                <form id="trace-form" class="integration-controls"><label>Origin asset <input id="trace-origin" value="TX_882" required></label><label>Maximum hops <input id="trace-hops" type="number" min="1" max="12" value="10" required></label><button>Run cascade trace</button></form><pre id="trace-result" class="integration-result"></pre><pre id="console-cypher-pre" class="text-xs font-mono bg-slate-950 text-sky-300 p-4 rounded-2xl border border-slate-800 overflow-x-auto leading-relaxed">Run a trace to inspect the backend Cypher evidence.</pre>
+                <form id="trace-form" class="integration-controls"><label>Origin asset <input id="trace-origin" value="TX_882" required></label><label>Maximum hops <input id="trace-hops" type="number" min="1" max="12" value="10" required></label><label class="trace-trip"><span><input id="trace-trip" type="checkbox" checked> Simulate primary circuit trip</span></label><button>Run cascade trace</button></form><div id="trace-result" class="trace-result" aria-live="polite"></div><pre id="console-cypher-pre" class="text-xs font-mono bg-slate-950 text-sky-300 p-4 rounded-2xl border border-slate-800 overflow-x-auto leading-relaxed">Run a trace to inspect the backend Cypher evidence.</pre>
             </div>
 
             <!-- Sub-Page 3: SCADA MCP Agent Loop -->
@@ -660,6 +660,6 @@ RETURN path, sub.capacity_mw;</pre>
         </div>
     </div>
 
-    <script src="assets/grid-icons.js?v=82017f277623"></script><script src="assets/world.js?v=02948cf97b12"></script><script src="assets/app.js?v=dfc3a4f36646"></script><script src="assets/features.js?v=faf495b6b9db"></script>
+    <script src="assets/grid-icons.js?v=82017f277623"></script><script src="assets/world.js?v=02948cf97b12"></script><script src="assets/app.js?v=366b6e435ad9"></script><script src="assets/features.js?v=faf495b6b9db"></script>
 </body>
 </html>
