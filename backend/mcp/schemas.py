@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 class BlastRadiusRequest(BaseModel):
     # A span origin starts at its downstream tower, so TX_882 reaches SUB_METRO in 6 hops.
     origin_node_id: str = "TX_882"
-    max_hops: int = Field(6, ge=1, le=12)
+    max_hops: int = Field(10, ge=1, le=12)
 
 
 class TripBreakerRequest(BaseModel):

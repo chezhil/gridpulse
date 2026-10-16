@@ -62,8 +62,7 @@ add LIMIT 50 unless the question asks for everything. If the question cannot be 
 return {"cypher": "", "explanation": "why not"}."""
 
 _WRITE = re.compile(r"\b(CREATE|MERGE|SET|DELETE|DETACH|REMOVE|DROP|FOREACH|LOAD\s+CSV)\b", re.I)
-_CALL = re.compile(r"\bCALL\s+([A-Za-z_.]+)", re.I)
-_STRINGS = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")
+_CALL = re.compile(r"\bCALL\s+([A-Za-z0-9_.]+)", re.I)
 _ID_VALUE = re.compile(r"^[A-Z][A-Z0-9_]{0,39}$")
 
 
@@ -81,6 +80,46 @@ def _collect_ids(value, found=None):
     return found
 
 
+def _bare(q: str) -> str:
+    """``q`` with string literals emptied, comments blanked and backtick names unquoted.
+
+    A single left-to-right scan, so a quote inside a comment or a backtick name
+    can't hide a clause the way a regex string-stripper can be fooled.
+    """
+    out, i, n = [], 0, len(q)
+    while i < n:
+        ch = q[i]
+        if ch in "'\"":
+            j = i + 1
+            while j < n and q[j] != ch:
+                j += 2 if q[j] == "\\" else 1
+            if j >= n:
+                raise InvalidRequestError("unterminated string literal")
+            out.append("''")
+            i = j + 1
+        elif ch == "`":
+            j = q.find("`", i + 1)
+            if j < 0:
+                raise InvalidRequestError("unterminated backtick name")
+            # Keep the name visible to the clause checks; anything odd becomes "_".
+            out.append(re.sub(r"[^A-Za-z0-9_.]", "_", q[i + 1:j]))
+            i = j + 1
+        elif q.startswith("//", i):
+            j = q.find("\n", i)
+            out.append(" ")
+            i = n if j < 0 else j
+        elif q.startswith("/*", i):
+            j = q.find("*/", i + 2)
+            if j < 0:
+                raise InvalidRequestError("unterminated comment")
+            out.append(" ")
+            i = j + 2
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def check_cypher(cypher: str) -> str:
     """Reject anything that is not a single read-only query. Returns the cleaned query."""
     q = (cypher or "").strip().rstrip(";").strip()
@@ -88,7 +127,7 @@ def check_cypher(cypher: str) -> str:
         raise InvalidRequestError("empty query")
     if len(q) > 4000:
         raise InvalidRequestError("query too long")
-    bare = _STRINGS.sub("''", q)  # ignore keywords inside string literals
+    bare = _bare(q)  # keywords inside strings and comments don't count; backtick names do
     if ";" in bare:
         raise InvalidRequestError("only one statement is allowed")
     if _WRITE.search(bare):
@@ -107,6 +146,15 @@ def _schema_context(client: GraphClient) -> str:
     return "\n".join(f"  {r['label']}: {r['n']} nodes, e.g. {', '.join(map(str, r['sample']))}" for r in q.rows)
 
 
+def _retry_after(exc, default=5.0, cap=20.0) -> float:
+    """Seconds to wait from a rate-limit response; a date or junk header falls back to the default."""
+    try:
+        value = float(getattr(exc.response, "headers", {}).get("retry-after") or default)
+    except (TypeError, ValueError):
+        value = default
+    return min(max(value, 0.0), cap)
+
+
 def _complete(client, messages, json_mode=True) -> str:
     import groq
     kwargs = dict(model=MODEL, messages=messages, max_completion_tokens=2048, temperature=0.1)
@@ -121,7 +169,7 @@ def _complete(client, messages, json_mode=True) -> str:
         except groq.RateLimitError as exc:
             if attempt == 2:
                 raise AgentFailed("Groq rate limit: try again in a minute") from exc
-            time.sleep(min(float(getattr(exc.response, "headers", {}).get("retry-after", "5") or 5), 20))
+            time.sleep(_retry_after(exc))
         except groq.AuthenticationError as exc:
             raise AgentUnavailable("Groq credentials missing or invalid; set GROQ_API_KEY") from exc
         except groq.APIStatusError as exc:
@@ -138,7 +186,12 @@ def _parse(text: str) -> Dict[str, str]:
         m = re.search(r"\{.*\}", text, re.S)
         if not m:
             raise AgentFailed("model did not return JSON")
-        data = json.loads(m.group(0))
+        try:
+            data = json.loads(m.group(0))
+        except ValueError as exc:
+            raise AgentFailed("model returned malformed JSON") from exc
+    if not isinstance(data, dict):
+        raise AgentFailed("model did not return a JSON object")
     return {"cypher": str(data.get("cypher") or ""), "explanation": str(data.get("explanation") or "")}
 
 

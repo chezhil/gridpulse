@@ -122,13 +122,18 @@ async def agent_advise(req: AdviseRequest, session=Depends(verify_operator_token
             if recheck['verdict'] != 'APPROVED':
                 advice['execution_blocked'] = recheck['reasons']
                 return advice
-            for breaker_id in advice['plan']['trip_breakers']:
-                advice['executed'].append(await asyncio.to_thread(
-                    server.scada_trip_breaker, breaker_id, 'Agent plan approved by graph guard',
-                    operator_id=session.operator_id))
-            for bess_id, mw in advice['plan']['bess_dispatch'].items():
-                advice['executed'].append(await asyncio.to_thread(
-                    server.scada_dispatch_bess, bess_id, mw, operator_id=session.operator_id))
+            # Battery first, so a refused dispatch never leaves customers shed without relief.
+            actions = [(server.scada_dispatch_bess, (bess_id, mw)) for bess_id, mw in advice['plan']['bess_dispatch'].items()]
+            actions += [(server.scada_trip_breaker, (breaker_id, 'Agent plan approved by graph guard'))
+                        for breaker_id in advice['plan']['trip_breakers']]
+            for fn, args in actions:
+                try:
+                    advice['executed'].append(await asyncio.to_thread(fn, *args, operator_id=session.operator_id))
+                except (PermissionError, ValueError) as exc:
+                    # Earlier steps stay applied (and audited); report where execution stopped.
+                    advice['execution_failed'] = {'action': fn.__name__, 'target': args[0], 'error': str(exc)}
+                    sim._agent_log = f"Agent plan stopped at {fn.__name__}({args[0]}): {exc}"
+                    return advice
             sim._agent_log = f"Agent plan executed after graph approval: {advice['summary']}"
     return advice
 
@@ -149,7 +154,8 @@ async def ask_the_grid(req: AskRequest, session=Depends(verify_operator_token)):
     except quota.QuotaExceeded as exc:
         raise HTTPException(429, {'code': 'AI_QUOTA', 'message': str(exc)}) from exc
     try:
-        client = networks.owned_client(session.operator_id, req.network_id) if req.network_id else None
+        client = (await asyncio.to_thread(networks.owned_client, session.operator_id, req.network_id)
+                  if req.network_id else None)
         return await asyncio.to_thread(ask.ask, req.question, client)
     except agent.AgentUnavailable as exc:
         raise HTTPException(503, {'code': 'AGENT_UNAVAILABLE', 'message': str(exc)}) from exc

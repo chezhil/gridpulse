@@ -106,8 +106,11 @@ class GridPulseInterceptor:
     def _greedy_plan(required, assets):
         """Battery support up to the documented 45 MW, then isolated Tier-3 relief."""
         battery = next((b for b in assets['bess']['eligible'] if b['id'] == 'BESS_METRO_01'), None)
-        planned = min(45.0, battery['available_mw']) if battery else 0.0
-        remaining = max(0, required - planned)
+        # Dispatch is an absolute setpoint; available_mw is headroom on top of what is already injected.
+        active = (battery.get('active_injection_mw') or 0.0) if battery else 0.0
+        setpoint = min(45.0, active + battery['available_mw']) if battery else 0.0
+        added = max(setpoint - active, 0.0)
+        remaining = max(0, required - added)
         breakers = []
         for load in assets['sheddable_loads']['eligible']:
             if remaining <= 0:
@@ -117,14 +120,15 @@ class GridPulseInterceptor:
         if remaining > 0:
             raise ValueError('Insufficient safe Tier-3 shedding capacity')
         return {'trip_breakers': breakers,
-                'bess_dispatch': {battery['id']: planned} if planned > 0 and required > 0 else {}}
+                'bess_dispatch': {battery['id']: setpoint} if added > 0 and required > 0 else {}}
 
     def _execute(self, run_id, plan, reason):
         sim._scenario_status = 'MITIGATING'
-        for breaker_id in plan.get('trip_breakers') or []:
-            server.scada_trip_breaker(breaker_id, reason)
+        # Battery first: if it is refused, no customer has been shed yet.
         for bess_id, mw in (plan.get('bess_dispatch') or {}).items():
             server.scada_dispatch_bess(bess_id, mw)
+        for breaker_id in plan.get('trip_breakers') or []:
+            server.scada_trip_breaker(breaker_id, reason)
         server.sync()
         post = graph.trace_cascade('SUB_METRO')
         protection = graph.verify_tier1_protection('SUB_METRO')

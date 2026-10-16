@@ -125,7 +125,7 @@ PLAN_PROPS = {'trip_breakers': {'type': 'array', 'items': {'type': 'string'}},
 TOOLS = [
     _tool('trace_cascade', 'Blast radius of a span/node and the power-flow projection; assume_tripped adds hypothetical trips.',
           {'origin_id': {'type': 'string', 'description': 'Span or node id, e.g. TX_882 or SUB_METRO'},
-           'max_hops': {'type': 'integer', 'minimum': 1, 'maximum': 12, 'description': 'default 8; TX_882 needs 6 to reach SUB_METRO'},
+           'max_hops': {'type': 'integer', 'minimum': 1, 'maximum': 12, 'description': 'default 10; TX_882 needs 6 and HYDRO_ALPINE_01 needs 10 to reach SUB_METRO'},
            'assume_tripped': {'type': 'array', 'items': CIRCUIT_REF}}, ['origin_id']),
     _tool('find_mitigation_assets', 'Usable batteries and sheddable Tier-3 loads at a substation.',
           {'substation_id': {'type': 'string'}, 'required_mw': {'type': 'number', 'minimum': 0}},
@@ -152,7 +152,7 @@ TOOLS = [
 ]
 
 HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
-    'trace_cascade': lambda a: graph.trace_cascade(a['origin_id'], max_hops=a.get('max_hops', 8),
+    'trace_cascade': lambda a: graph.trace_cascade(a['origin_id'], max_hops=a.get('max_hops', 10),
                                                    assume_tripped=a.get('assume_tripped')),
     'find_mitigation_assets': lambda a: graph.find_mitigation_assets(a['substation_id'], a['required_mw']),
     'check_breaker': lambda a: graph.check_breaker(a['breaker_id']),
@@ -273,8 +273,8 @@ def briefing(question: str, origin_id: Optional[str] = None,
     except graph.GraphError as exc:
         lines.append(f'MEMORY unavailable: {exc}')
     try:
-        trace = graph.trace_cascade(origin, max_hops=8)
-        step('trace_cascade', {'origin_id': origin, 'max_hops': 8}, trace)
+        trace = graph.trace_cascade(origin, max_hops=10)
+        step('trace_cascade', {'origin_id': origin, 'max_hops': 10}, trace)
         lines.append('TRACE (current stored state) ' + json.dumps(_compact('trace_cascade', trace), default=str, separators=(',', ':')))
         subs = trace['summary']['downstream_substations'] or [s['id'] for s in trace['projection']['substations'] if s['overload']]
         relief = trace['projection'].get('required_relief_mw') or 0.0
@@ -285,6 +285,19 @@ def briefing(question: str, origin_id: Optional[str] = None,
     except graph.GraphError as exc:
         lines.append(f'TRACE unavailable for {origin}: {exc}')
     return '\n'.join(lines)
+
+
+def _plan_from(submitted):
+    """The submit_plan arguments as a plan, or AgentFailed so the caller can fall back."""
+    breakers = submitted.get('trip_breakers') or []
+    dispatch = submitted.get('bess_dispatch') or {}
+    if (not isinstance(breakers, list) or not all(isinstance(b, str) for b in breakers)
+            or not isinstance(dispatch, dict)
+            or not all(isinstance(k, str) and isinstance(v, (int, float)) and not isinstance(v, bool)
+                       for k, v in dispatch.items())):
+        raise AgentFailed('Submitted plan is malformed: trip_breakers must be a list of ids and '
+                          'bess_dispatch an object of id -> MW')
+    return {'trip_breakers': list(breakers), 'bess_dispatch': dict(dispatch)}
 
 
 def advise(question: Optional[str] = None, client=None,
@@ -366,9 +379,11 @@ def advise(question: Optional[str] = None, client=None,
     if submitted is None:
         raise AgentFailed(f'No plan submitted within {MAX_TURNS} turns')
 
-    plan = {'trip_breakers': list(submitted.get('trip_breakers') or []),
-            'bess_dispatch': dict(submitted.get('bess_dispatch') or {})}
-    validation = graph.evaluate_plan(plan)
+    plan = _plan_from(submitted)
+    try:
+        validation = graph.evaluate_plan(plan)
+    except graph.InvalidRequestError as exc:
+        raise AgentFailed(f'Submitted plan is malformed: {exc}') from exc
     return {
         'provider': 'groq',
         'model': MODEL,

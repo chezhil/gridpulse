@@ -77,3 +77,26 @@ def test_websocket_rejects_bad_session_with_policy_code(live_runtime):  # noqa: 
             with c.websocket_connect('/ws/telemetry?token=stale') as ws:
                 ws.receive_json()
         assert exc.value.code == 1008
+
+
+@pytest.mark.parametrize("cypher", [
+    "MATCH (n:`a'b`) CREATE (x) RETURN 'c'",          # quote inside a backtick name hid CREATE
+    "MATCH (n) // it's\nCREATE (x) RETURN n",         # quote inside a comment
+    "MATCH (n) /* ' */ SET n.a = 1 /* ' */ RETURN n",
+    "CALL `db.labels`()", "CALL/**/db.labels()",
+    "MATCH (n) RETURN 'x", "MATCH (n) /* never closed",
+])
+def test_guard_is_not_fooled_by_comments_or_backticks(cypher):
+    with pytest.raises(InvalidRequestError):
+        ask.check_cypher(cypher)
+
+
+def test_guard_still_allows_comments_and_quoted_names():
+    ask.check_cypher("MATCH (n:`Tower`) // towers only\nRETURN n.id /* id */")
+
+
+@pytest.mark.parametrize("text", ['{"cypher": ', '["MATCH (n) RETURN n"]', 'here: {not json}'])
+def test_unparseable_model_output_is_agent_failed(text):
+    from backend.mcp import agent
+    with pytest.raises(agent.AgentFailed):
+        ask._parse(text)

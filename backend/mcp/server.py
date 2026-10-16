@@ -16,7 +16,7 @@ def sync():
     return graph.apply_state_update(sim.graph_update())
 
 
-def falkordb_trace_blast_radius(origin_node_id='TX_882', max_hops=6):
+def falkordb_trace_blast_radius(origin_node_id='TX_882', max_hops=10):
     sync()
     return graph.trace_cascade(origin_node_id, max_hops=max_hops)
 

@@ -130,3 +130,42 @@ def test_missing_credentials_are_reported_as_unavailable(monkeypatch):
     monkeypatch.setenv('GROQ_API_KEY', '   ')
     with pytest.raises(agent.AgentUnavailable):
         agent.make_client()
+
+
+@pytest.mark.parametrize('bad', [
+    {'trip_breakers': 'BRK_IND_12', 'bess_dispatch': {}},           # a string would become a list of characters
+    {'trip_breakers': [], 'bess_dispatch': [['BESS_METRO_01', 45]]},
+    {'trip_breakers': [], 'bess_dispatch': {'BESS_METRO_01': '45'}},
+    {'trip_breakers': ['brk_ind_12'], 'bess_dispatch': {}},          # passes the shape check, fails id validation
+])
+def test_malformed_submitted_plan_is_agent_failed(live_runtime, bad):  # noqa: F811
+    # AgentFailed (not a TypeError or a 422) lets the interceptor fall back to the deterministic plan.
+    graph.init_graph(reset=True)
+    graph.apply_state_update({'spans': [TRIP]})
+    with pytest.raises(agent.AgentFailed):
+        agent.advise(client=FakeClient([response([call(1, 'submit_plan', {**bad, 'summary': 's'})])]))
+
+
+def test_http_advise_duplicate_plan_is_rejected_not_500(live_runtime, monkeypatch):  # noqa: F811
+    sim, _, _ = live_runtime
+    graph.init_graph(reset=True)
+    with TestClient(app) as c:
+        op = c.post('/api/auth/login', json={'demo': True, 'role': 'operator'}).json()['access_token']
+        sim._spans['TX_882']['upper_status'] = 'FAULT_TRIPPED'
+        dup = {'trip_breakers': ['BRK_IND_12', 'BRK_IND_12'], 'bess_dispatch': {'BESS_METRO_01': 45.0}}
+        monkeypatch.setattr(agent, 'make_client', lambda: FakeClient(script(dup)))
+        r = c.post('/api/mcp/agent/advise', json={'execute': True}, headers={'Authorization': 'Bearer ' + op})
+        assert r.status_code == 200, r.text
+        assert r.json()['validation']['verdict'] == 'REJECTED' and r.json()['executed'] == []
+    assert sim._consumers['IND_METRO_12']['energized']
+
+
+def test_greedy_plan_uses_absolute_battery_setpoint():
+    from backend.mcp.interceptor import GridPulseInterceptor
+    # 30 MW already injected, 15 MW headroom left: the command must be 45, not 15.
+    assets = {'bess': {'eligible': [{'id': 'BESS_METRO_01', 'available_mw': 15.0, 'active_injection_mw': 30.0}]},
+              'sheddable_loads': {'eligible': [{'breaker_id': 'BRK_IND_12', 'mw_demand': 62.0}]}}
+    plan = GridPulseInterceptor._greedy_plan(70.0, assets)
+    assert plan == {'trip_breakers': ['BRK_IND_12'], 'bess_dispatch': {'BESS_METRO_01': 45.0}}
+    nominal = {**assets, 'bess': {'eligible': [{'id': 'BESS_METRO_01', 'available_mw': 45.0, 'active_injection_mw': 0.0}]}}
+    assert GridPulseInterceptor._greedy_plan(80.0, nominal)['bess_dispatch'] == {'BESS_METRO_01': 45.0}

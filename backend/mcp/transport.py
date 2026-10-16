@@ -30,7 +30,7 @@ async def _call(tool, body=None, params=None):
 
 @mcp.tool()
 async def falkordb_trace_blast_radius(origin_node_id: str = 'TX_882',
-                                     max_hops: Annotated[int, Field(ge=1, le=12)] = 6) -> dict:
+                                     max_hops: Annotated[int, Field(ge=1, le=12)] = 10) -> dict:
     """Execute a bounded graph trace against the app's current simulator state."""
     return await _call('falkordb_trace_blast_radius', {'origin_node_id': origin_node_id, 'max_hops': max_hops})
 
