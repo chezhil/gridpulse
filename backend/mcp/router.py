@@ -93,6 +93,11 @@ async def agent_advise(req: AdviseRequest, session=Depends(verify_operator_token
     from backend.mcp import agent
     if req.execute and session.role != 'operator':
         raise HTTPException(403, 'Only the operator role can execute an agent plan')
+    from backend.mcp import quota
+    try:
+        quota.consume(session.operator_id)
+    except quota.QuotaExceeded as exc:
+        raise HTTPException(429, {'code': 'AI_QUOTA', 'message': str(exc)}) from exc
     async with sim._lock:
         await asyncio.to_thread(server.sync)
     try:
@@ -138,7 +143,11 @@ async def ask_the_grid(req: AskRequest, session=Depends(verify_operator_token)):
     """Plain-English question -> one read-only Cypher query (guarded, GRAPH.RO_QUERY) -> rows + short answer."""
     from backend.graph import GraphError, networks
     from backend.graph.router import _STATUS
-    from backend.mcp import agent, ask
+    from backend.mcp import agent, ask, quota
+    try:
+        quota.consume(session.operator_id)
+    except quota.QuotaExceeded as exc:
+        raise HTTPException(429, {'code': 'AI_QUOTA', 'message': str(exc)}) from exc
     try:
         client = networks.owned_client(session.operator_id, req.network_id) if req.network_id else None
         return await asyncio.to_thread(ask.ask, req.question, client)

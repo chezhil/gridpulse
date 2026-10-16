@@ -166,6 +166,21 @@ docker compose up --build       # FalkorDB + backend + UI on http://localhost:80
 
 Without `GROQ_API_KEY`, everything works except the LLM agent, and AI-operator mode falls back to the deterministic pipeline.
 
+## Deploying (Railway)
+
+`railway.json` and the `Dockerfile` are deployment-ready: the server listens on the host's `PORT` and runs one worker, because sessions and simulator state live in memory.
+
+1. **Backend service:** create it from the GitHub repo.
+2. **FalkorDB service:** create it from the image `falkordb/falkordb`, with a volume at `/data`.
+3. **Backend variables:**
+   - `FALKORDB_HOST` = the FalkorDB service's private domain
+   - `FALKORDB_PORT=6379`
+   - `GROQ_API_KEY`
+   - `GRIDPULSE_AUDIT_DB=/app/data/audit_log.db`, plus a volume at `/app/data`
+4. **Public URL:** generate a public domain for the backend.
+
+Groq-backed features share a per-hour and per-user budget (`GRIDPULSE_AI_PER_HOUR`, `GRIDPULSE_AI_PER_USER_10MIN`), so a public demo can't exhaust the key. Set `GRIDPULSE_AI_ENABLED=0` to switch them off. AI-operator mode then falls back to the deterministic pipeline.
+
 ## AI assistance disclosure (Rule 11)
 
 This project was built with AI coding assistants: **Claude Code** (graph engine, MCP layer, Lab UI), **Codex** (frontend) and **Antigravity** (simulator, auth, audit, infrastructure). Each team member directed the work on their own module. Assistant-written code is covered by the test suite and CI described above.

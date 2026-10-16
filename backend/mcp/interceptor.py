@@ -191,8 +191,13 @@ class GridPulseInterceptor:
 
     async def _agent(self, run_id, scenario_id):
         """Returns True if the agent's plan was executed; False to fall back."""
-        from backend.mcp import agent
+        from backend.mcp import agent, quota
         _step({'kind': 'start', 'text': QUESTIONS[scenario_id]})
+        try:
+            quota.consume(self._ctx[run_id].get('operator'))
+        except quota.QuotaExceeded as exc:
+            _step({'kind': 'fallback', 'text': f'{exc}. Deterministic pipeline takes over.'})
+            return False
         sim._agent_log = 'AI operator investigating with graph tools.'
         try:
             # The model runs without the lock so telemetry, reset and other reads keep working.
@@ -227,12 +232,13 @@ class GridPulseInterceptor:
             _step({'kind': 'done', 'text': 'Plan executed and verified; Tier-1 assets protected.'})
             return True
 
-    async def run(self, run_id, scenario_id, mode='deterministic'):
+    async def run(self, run_id, scenario_id, mode='deterministic', operator=None):
         try:
             async with sim._lock:
                 if sim._run_id != run_id:
                     return
                 await asyncio.to_thread(self._inject, run_id, scenario_id)
+                self._ctx[run_id]['operator'] = operator
             await asyncio.sleep(0.25)
             async with sim._lock:
                 if sim._run_id != run_id:

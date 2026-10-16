@@ -86,3 +86,14 @@ def test_wildfire_reuses_the_lightning_playbook_by_similarity(live_runtime):  # 
     assert first['learned_from'] in ('', None) and second['learned_from'] == 'TRIP:TX_882:UPPER_PRIMARY'
     assert second['steps'] < first['steps']
     assert sim._consumers['HOSP_ST_JUDE']['energized']
+
+
+def test_agent_mode_falls_back_when_ai_budget_is_used_up(live_runtime, monkeypatch):  # noqa: F811
+    from backend.mcp import quota
+    sim, store, _ = live_runtime
+    graph.init_graph(reset=True)
+    quota.reset()
+    monkeypatch.setenv('GRIDPULSE_AI_ENABLED', '0')
+    run_scenario(sim, mode='agent')
+    assert sim._scenario_status == 'MITIGATED'
+    assert 'turned off' in sim._agent_steps[-1]['text']

@@ -178,7 +178,7 @@ class GridSimulator:
             self._mode = mode
             self._agent_steps = []
             self._memory = None
-            self._active_task = asyncio.create_task(get_interceptor().run(self._run_id, scenario_id, mode))
+            self._active_task = asyncio.create_task(get_interceptor().run(self._run_id, scenario_id, mode, operator_id))
             return self.get_snapshot()
 
     def inject_fault(self, scenario_id):
