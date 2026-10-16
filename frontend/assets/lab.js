@@ -215,10 +215,16 @@
   }
   $('edValid').onclick = () => $('edValid').title && toast($('edValid').title, $('edValid').classList.contains('ok'));
   function renderProps(sel) {
-    if (!sel) { $('edProps').innerHTML = '<span class="muted">Select an element on the canvas.</span>'; return; }
-    $('edProps').innerHTML = `<b>${esc(sel.label)} ${esc(sel.id)}</b>` + sel.fields.map((f) => f.type === 'tier'
-      ? `<label>${f.key}<select data-k="${f.key}">${[1, 2, 3].map((t) => `<option value="${t}" ${Number(f.value) === t ? 'selected' : ''}>${t} ${['', 'hospital / critical', 'protected', 'sheddable'][t]}</option>`).join('')}</select></label>`
-      : `<label>${f.key}<input data-k="${f.key}" type="${f.type === 'number' ? 'number' : 'text'}" step="any" value="${esc(f.value)}"></label>`).join('') +
+    if (!sel) { $('edProps').innerHTML = '<span class="muted">Select a part or wire on the canvas to edit it.</span>'; return; }
+    const labels = {id:'ID',name:'Name',capacity_mw:'Capacity (MW)',output_mw:'Output (MW)',mw_demand:'Demand (MW)',priority_tier:'Priority',max_discharge_mw:'Max output (MW)',soc_pct:'Charge (%)',from:'From',to:'To',limit_mw:'Limit (MW)',connects_to:'Connected to',substation:'Substation',impedance_pu:'Impedance',backup_limit_mw:'Backup limit (MW)',backup_impedance_pu:'Backup impedance',breaker_id:'Breaker ID'};
+    const primary = {buses:['id','name'],substations:['id','name','capacity_mw'],generators:['id','name','output_mw','capacity_mw'],loads:['id','name','mw_demand','priority_tier'],batteries:['id','max_discharge_mw','soc_pct'],lines:['id','from','to','limit_mw']}[sel.kind] || [];
+    const field = (f) => f.type === 'tier'
+      ? `<label>${labels[f.key]||f.key}<select data-k="${f.key}">${[1, 2, 3].map((t) => `<option value="${t}" ${Number(f.value) === t ? 'selected' : ''}>${t} ${['', 'critical', 'protected', 'flexible'][t]}</option>`).join('')}</select></label>`
+      : `<label>${labels[f.key]||f.key}<input data-k="${f.key}" type="${f.type === 'number' ? 'number' : 'text'}" step="any" value="${esc(f.value)}"></label>`;
+    const basic = sel.fields.filter(f=>primary.includes(f.key));
+    const advanced = sel.fields.filter(f=>!primary.includes(f.key));
+    $('edProps').innerHTML = `<b>${esc(sel.label)} ${esc(sel.id)}</b><div class="property-grid">${basic.map(field).join('')}</div>` +
+      (advanced.length ? `<details><summary>More settings</summary><div class="property-grid">${advanced.map(field).join('')}</div></details>` : '') +
       `<div class="row"><button class="b p" id="propApply">Apply</button><button class="b d" id="propDelete">Delete</button></div>`;
     $('propApply').onclick = () => {
       const values = {}; $('edProps').querySelectorAll('[data-k]').forEach((i) => (values[i.dataset.k] = i.value));
@@ -229,6 +235,49 @@
   document.querySelectorAll('#edModes [data-mode]').forEach((b) => (b.onclick = () => {
     document.querySelectorAll('#edModes [data-mode]').forEach((x) => x.classList.toggle('on', x === b)); editor.setMode(b.dataset.mode);
   }));
+  const builderCanvas = $('cyNet');
+  document.querySelectorAll('#edModes [draggable=true]').forEach(button => {
+    button.addEventListener('dragstart', event => {
+      event.dataTransfer.setData('application/x-gridpulse-part', button.dataset.mode);
+      event.dataTransfer.effectAllowed = 'copy';
+    });
+  });
+  builderCanvas.addEventListener('dragover', event => {
+    if (!event.dataTransfer.types.includes('application/x-gridpulse-part')) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; builderCanvas.classList.add('builder-drop-ready');
+  });
+  builderCanvas.addEventListener('dragleave', event => { if (!builderCanvas.contains(event.relatedTarget)) builderCanvas.classList.remove('builder-drop-ready'); });
+  builderCanvas.addEventListener('drop', event => {
+    const kind = event.dataTransfer.getData('application/x-gridpulse-part');
+    builderCanvas.classList.remove('builder-drop-ready');
+    if (!kind) return;
+    event.preventDefault();
+    document.querySelector('#edModes [data-mode="select"]').click();
+    editor.addFromPalette(kind, event.clientX, event.clientY);
+  });
+  $('edFit').onclick = () => editor.fit();
+  $('edZoomIn').onclick = () => editor.zoomBy(1.25);
+  $('edZoomOut').onclick = () => editor.zoomBy(0.8);
+  const builderWorkspace = $('builder');
+  let builderFallbackFullscreen = false;
+  function syncBuilderFullscreen() {
+    const expanded = document.fullscreenElement === builderWorkspace || builderFallbackFullscreen;
+    $('edFullscreen').textContent = expanded ? '↙ Exit full screen' : '⛶ Full screen';
+    $('edFullscreen').setAttribute('aria-pressed', String(expanded));
+    requestAnimationFrame(() => { editor.resize(); requestAnimationFrame(() => editor.resize()); });
+  }
+  $('edFullscreen').onclick = async () => {
+    if (document.fullscreenElement === builderWorkspace) { await document.exitFullscreen(); return; }
+    if (builderFallbackFullscreen) { builderFallbackFullscreen = false; builderWorkspace.classList.remove('builder-fullscreen-fallback'); document.body.classList.remove('builder-fullscreen-active'); syncBuilderFullscreen(); return; }
+    try { await builderWorkspace.requestFullscreen(); }
+    catch { builderFallbackFullscreen = true; builderWorkspace.classList.add('builder-fullscreen-fallback'); document.body.classList.add('builder-fullscreen-active'); syncBuilderFullscreen(); }
+  };
+  document.addEventListener('fullscreenchange', syncBuilderFullscreen);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && builderFallbackFullscreen) {
+      builderFallbackFullscreen = false; builderWorkspace.classList.remove('builder-fullscreen-fallback'); document.body.classList.remove('builder-fullscreen-active'); syncBuilderFullscreen();
+    }
+  });
   $('edUndo').onclick = () => editor.undoLast() || toast('Nothing to undo', true);
   $('edLayout').onclick = () => editor.autoLayout();
   document.addEventListener('keydown', (e) => {
@@ -267,7 +316,7 @@
   $('netSel').onchange = () => busy($('netSel'), () => openNetwork($('netSel').value));
   $('netRefresh').onclick = () => busy($('netRefresh'), () => loadNetworks(currentNet?.id));
   $('netTemplate').onclick = () => busy($('netTemplate'), async () => { const t = await api(`/api/networks/templates/${$('tplSel').value}`); startUnsaved(t.spec, `template: ${t.spec.name}`); });
-  $('netBlank').onclick = () => startUnsaved({ name: 'My grid' }, 'new network: pick a mode and click the canvas');
+  $('netBlank').onclick = () => startUnsaved({ name: 'My grid' }, 'New unsaved network');
   $('netDelete').onclick = () => busy($('netDelete'), async () => {
     if (!currentNet || !confirm(`Delete ${currentNet.id}?`)) return;
     await api(`/api/networks/${currentNet.id}`, { method: 'DELETE' }); currentNet = null; cases = []; editor.load({}); await loadNetworks(); toast('Deleted', true);

@@ -24,16 +24,17 @@
   };
   const ID_RE = /^[A-Z0-9_]{1,40}$/;
   const STYLE = [
-    { selector: 'node', style: { label: 'data(label)', color: '#cbd5e1', 'font-size': 9, 'text-valign': 'bottom', 'text-margin-y': 3, width: 16, height: 16, 'background-color': '#94a3b8' } },
-    { selector: 'node.HydroPlant', style: { shape: 'round-triangle', 'background-color': '#22d3ee', width: 22, height: 22 } },
+    { selector: 'node', style: { label: 'data(label)', color: '#dbeafe', 'font-size': 10, 'font-weight': 600, 'text-valign': 'bottom', 'text-margin-y': 5, width: 19, height: 19, 'background-color': '#94a3b8' } },
+    { selector: 'node.HydroPlant', style: { shape: 'round-triangle', 'background-color': '#22d3ee', width: 25, height: 25 } },
     { selector: 'node.Tower', style: { shape: 'diamond', 'background-color': '#94a3b8' } },
-    { selector: 'node.Substation', style: { shape: 'round-rectangle', 'background-color': '#0ea5e9', width: 22, height: 22 } },
-    { selector: 'node.BESS', style: { shape: 'barrel', 'background-color': '#10b981' } },
+    { selector: 'node.Substation', style: { shape: 'round-rectangle', 'background-color': '#0ea5e9', width: 25, height: 25 } },
+    { selector: 'node.BESS', style: { shape: 'barrel', 'background-color': '#10b981', width: 22, height: 22 } },
     { selector: 'node.Consumer', style: { 'background-color': '#64748b', width: 12, height: 12, 'font-size': 8 } },
     { selector: 'node.tier1', style: { 'background-color': '#a855f7' } }, { selector: 'node.tier3', style: { 'background-color': '#f59e0b' } },
     { selector: 'node.pending', style: { 'border-width': 3, 'border-color': '#fde047' } },
     { selector: ':selected', style: { 'border-width': 3, 'border-color': '#fde047', 'line-color': '#fde047' } },
-    { selector: 'edge', style: { width: 2.5, 'line-color': '#38bdf8', 'curve-style': 'bezier', label: 'data(label)', 'font-size': 7, color: '#7dd3fc', 'text-rotation': 'autorotate' } },
+    { selector: 'edge', style: { width: 2.5, 'line-color': '#38bdf8', 'curve-style': 'bezier', label: '' } },
+    { selector: 'edge:selected', style: { label: 'data(label)', 'font-size': 10, color: '#e0f2fe', 'text-background-color': '#082036', 'text-background-opacity': 0.9, 'text-background-padding': '3px', 'text-rotation': 'autorotate' } },
     { selector: 'edge.backup', style: { 'line-style': 'double', width: 5 } },
     { selector: 'edge.attach', style: { 'line-color': '#334155', width: 1, label: '' } },
     { selector: 'edge.feed', style: { 'line-color': '#22d3ee', width: 3, label: '' } },
@@ -164,6 +165,27 @@
       changed(id);
     }
 
+    ed.addFromPalette = (kind, clientX, clientY) => {
+      if (!['buses', 'substations', 'generators', 'loads', 'batteries'].includes(kind)) return false;
+      const rect = cy.container().getBoundingClientRect();
+      const pan = cy.pan(), zoom = cy.zoom();
+      const pos = { x: (clientX - rect.left - pan.x) / zoom, y: (clientY - rect.top - pan.y) / zoom };
+      let attachTo;
+      if (['generators', 'loads', 'batteries'].includes(kind)) {
+        const eligible = kind === 'generators' ? 'node.Tower, node.Substation' : 'node.Substation';
+        const targets = cy.nodes(eligible).toArray().sort((a, b) =>
+          Math.hypot(a.position('x') - pos.x, a.position('y') - pos.y) - Math.hypot(b.position('x') - pos.x, b.position('y') - pos.y));
+        if (!targets.length) {
+          ed.onStatus(kind === 'generators' ? 'Add a bus or substation first.' : 'Add a substation first, then drop this nearby.', 'warn');
+          return false;
+        }
+        attachTo = targets[0].id();
+      }
+      addAt(kind, pos, attachTo);
+      ed.onStatus(`Added ${KINDS[kind].label.toLowerCase()}${attachTo ? ` to ${attachTo}` : ''}. Drag it to adjust its position.`, '');
+      return true;
+    };
+
     cy.on('tap', (evt) => {
       if (evt.target !== cy) return;
       const pos = evt.position;
@@ -214,6 +236,8 @@
     ed.undoLast = () => { const prev = ed.undo.pop(); if (!prev) return false; ed.spec = JSON.parse(prev); ed.selected = null; ed.onSelect(null); render(); ed.onChange(ed.getSpec()); return true; };
     ed.autoLayout = () => { snapshot(); ed.spec.layout = {}; render(); ed.onChange(ed.getSpec()); };
     ed.resize = () => cy.resize();
+    ed.fit = () => cy.fit(undefined, 55);
+    ed.zoomBy = (factor) => cy.zoom({ level: Math.max(cy.minZoom(), Math.min(cy.maxZoom(), cy.zoom() * factor)), renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
     ed.counts = () => Object.fromEntries(Object.keys(KINDS).map((k) => [k, ed.spec[k].length]));
     return ed;
   }

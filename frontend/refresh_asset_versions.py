@@ -6,12 +6,14 @@ import re
 
 
 frontend = Path(__file__).resolve().parent
-pages = ('index.html',)
+pages = {
+    'index.html': ['design.css', 'utilities.css', 'world.js', 'app.js', 'features.js'],
+    'lab.html': ['lab-editor.js', 'lab.js'],
+}
 
-for page in pages:
+for page, assets in pages.items():
     path = frontend / page
     html = path.read_text(encoding='utf-8')
-    assets = ['design.css', 'utilities.css', 'world.js', 'app.js', 'features.js']
     for asset in assets:
         url = f'assets/{asset}'
         digest = sha256((frontend / url).read_bytes()).hexdigest()[:12]
