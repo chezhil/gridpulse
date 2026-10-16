@@ -1,7 +1,4 @@
 
-        const API_BASE = 'http://localhost:8000';
-        const WS_URL = 'ws://localhost:8000/ws/telemetry';
-
         const canvas = document.getElementById('realistic-world-canvas');
         const ctx = canvas.getContext('2d');
 
@@ -22,8 +19,8 @@
         let autoCycleTimer = null;
 
         const cypherQueries = [
-            "MATCH path = (t1:Tower {id:'T3'})-[:SPAN*1..6]->(sub:Substation)\nWHERE sub.city = 'MetroGrid'\nRETURN path, sub.capacity_mw;",
-            "MATCH (f:Span {id:'TX_882'})-[:FEEDS*1..4]->(load:Consumer)\nWHERE load.priority_tier = 3\nRETURN load.breaker_id, load.mw_demand;",
+            "MATCH path = (t3:Tower {id:'T3'})-[:SPAN|TERMINATES_AT*1..7]->(sub:Substation)\nWHERE sub.city = 'MetroGrid'\nRETURN path, sub.capacity_mw;",
+            "MATCH (:Tower)-[s:SPAN {id:'TX_882', circuit:'UPPER_PRIMARY'}]->(t:Tower)\nMATCH (t)-[:SPAN|TERMINATES_AT*1..7]->(:Substation)-[:DISTRIBUTES_TO]->(load:Consumer)\nWHERE load.priority_tier = 3\nRETURN DISTINCT load.breaker_id, load.mw_demand;",
             "MATCH (sub:Substation {id:'SUB_METRO'})<-[:CONNECTED]-(b:BESS)\nWHERE b.soc_pct > 40\nRETURN b.id, b.max_discharge_mw;"
         ];
         let activeCypherIndex = 0;
@@ -1412,6 +1409,11 @@
         }
 
         function renderScene(timestamp) {
+            // The corridor canvas is only visible on the landing view; keep the loop alive but skip the drawing work elsewhere.
+            if (activeAppView !== 'landing') {
+                requestAnimationFrame(renderScene);
+                return;
+            }
             animTime = (timestamp || 0) * 0.001;
             smoothScrollProgress += (targetScrollProgress - smoothScrollProgress) * 0.09;
             nightMix += ((isNightMode ? 1.0 : 0.0) - nightMix) * 0.07;
@@ -1509,7 +1511,11 @@
         window.toggleScadaMenu = function () {
             const drawer = document.getElementById('scada-menu-drawer');
             if (!drawer) return;
-            drawer.classList.toggle('-translate-x-full');
+            const open = drawer.classList.toggle('-translate-x-full') === false;
+            // A closed drawer is only moved off-screen, so take it out of the tab order too.
+            drawer.inert = !open;
+            document.getElementById('scada-menu-button')?.setAttribute('aria-expanded', String(open));
+            if (open) drawer.querySelector('button')?.focus();
         };
 
         window.switchScadaPage = function (pageId) {
@@ -1631,9 +1637,11 @@
             setScrollProgress(dragStartProgress + (dx / Math.max(320, window.innerWidth)) * 0.55);
         });
 
-        window.addEventListener('pointerup', () => {
+        const endSceneDrag = () => {
             isDraggingScene = false;
-        });
+        };
+        window.addEventListener('pointerup', endSceneDrag);
+        window.addEventListener('pointercancel', endSceneDrag);
 
         window.addEventListener('keydown', (e) => {
             if (activeAppView !== 'landing') return;

@@ -13,7 +13,7 @@
 
 
 
-    <link rel="stylesheet" href="assets/design.css?v=48e95b1bf7f5">
+    <link rel="stylesheet" href="assets/design.css?v=1b8bdd802d88">
 </head>
 <body class="text-slate-100 antialiased selection:bg-sky-500 selection:text-white">
 
@@ -144,7 +144,7 @@
                         Y-BUS SPARSE ADMITTANCE GRAPH
                     </div>
                     <p class="mt-2 text-xs sm:text-sm font-mono font-semibold leading-relaxed opacity-90">
-                        (:HydroPlant)-[:FEEDS {mw: 840}]-&gt;(:Tower_T1)<br>
+                        (:HydroPlant)-[:FEEDS {mw: 840}]-&gt;(:Tower {id:'T1'})<br>
                         <span class="text-sky-300 day-accent-sky font-bold">Zero SQL joins • Pure linear algebra</span>
                     </p>
                 </div>
@@ -390,12 +390,12 @@ RETURN path, sub.capacity_mw;</pre>
 
                     <div id="gateway-message" role="status" class="text-sm text-rose-400"></div><form onsubmit="handleGatewaySubmit(event)" class="space-y-4">
                         <div>
-                            <label class="block text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">OPERATOR CALLSIGN / EMAIL</label>
-                            <input id="login-email-input" type="text" value="operator@gridpulse.io" class="scada-input w-full rounded-xl px-3.5 py-2.5 text-xs font-mono focus:outline-none focus:border-sky-400">
+                            <label for="login-email-input" class="block text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">OPERATOR CALLSIGN / EMAIL</label>
+                            <input id="login-email-input" type="text" autocomplete="username" value="operator@gridpulse.io" class="scada-input w-full rounded-xl px-3.5 py-2.5 text-xs font-mono focus:outline-none focus:border-sky-400">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">SCADA ACCESS TOKEN / PASSWORD</label>
-                            <input id="login-pass-input" type="password"  class="scada-input w-full rounded-xl px-3.5 py-2.5 text-xs font-mono focus:outline-none focus:border-sky-400">
+                            <label for="login-pass-input" class="block text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">SCADA ACCESS TOKEN / PASSWORD</label>
+                            <input id="login-pass-input" type="password" autocomplete="current-password"  class="scada-input w-full rounded-xl px-3.5 py-2.5 text-xs font-mono focus:outline-none focus:border-sky-400">
                         </div>
                         <button id="gateway-submit-button" type="submit" class="w-full py-3 rounded-xl bg-sky-400 hover:bg-sky-300 text-slate-950 font-mono text-xs font-bold tracking-wide transition shadow-lg shadow-sky-500/20">
                             Authenticate &amp; enter console →
@@ -455,7 +455,7 @@ RETURN path, sub.capacity_mw;</pre>
         <!-- Top Command Bar -->
         <header class="sticky top-0 z-40 h-14 px-4 sm:px-6 scada-surface border-b flex items-center justify-between">
             <div class="flex items-center gap-3">
-                <button onclick="toggleScadaMenu()" class="p-2 rounded-lg border border-slate-700/60 hover:border-sky-400 text-slate-700 dark:text-slate-200 transition" title="Open Workspace Navigation">
+                <button id="scada-menu-button" onclick="toggleScadaMenu()" aria-label="Open workspace navigation" aria-controls="scada-menu-drawer" aria-expanded="false" class="p-2 rounded-lg border border-slate-700/60 hover:border-sky-400 text-slate-700 dark:text-slate-200 transition" title="Open Workspace Navigation">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
                     </svg>
@@ -492,11 +492,11 @@ RETURN path, sub.capacity_mw;</pre>
         </header>
 
         <!-- Slide-Over Hamburger Navigation Drawer -->
-        <div id="scada-menu-drawer" class="fixed inset-y-0 left-0 z-50 w-72 scada-surface p-5 transform -translate-x-full transition-transform duration-300 flex flex-col justify-between">
+        <div id="scada-menu-drawer" inert class="fixed inset-y-0 left-0 z-50 w-72 scada-surface p-5 transform -translate-x-full transition-transform duration-300 flex flex-col justify-between">
             <div class="space-y-5">
                 <div class="flex items-center justify-between border-b border-slate-700/40 pb-3">
                     <span class="font-mono text-xs uppercase tracking-widest text-sky-400">SCADA WORKSPACES</span>
-                    <button onclick="toggleScadaMenu()" class="text-xs font-mono text-slate-400 hover:text-white">✕</button>
+                    <button onclick="toggleScadaMenu()" aria-label="Close workspace navigation" class="text-xs font-mono text-slate-400 hover:text-white">✕</button>
                 </div>
                 <nav class="space-y-2 font-mono text-xs">
                     <button data-scada-nav="topology" aria-current="page" onclick="switchScadaPage('topology')" class="scada-nav-link scada-nav-active">
@@ -593,7 +593,7 @@ RETURN path, sub.capacity_mw;</pre>
             <!-- Sub-Page 2: Cypher Studio -->
             <div id="scada-page-cypher" class="hidden scada-surface rounded-3xl p-6 space-y-4">
                 <h3 class="font-display font-bold text-xl text-slate-900 dark:text-white">FalkorDB Multi-Hop Cypher Studio</h3>
-                <form id="trace-form" class="integration-controls"><label>Origin asset <input id="trace-origin" value="TX_882" required></label><label>Maximum hops <input id="trace-hops" type="number" min="1" max="20" value="6" required></label><button>Run cascade trace</button></form><pre id="trace-result" class="integration-result"></pre><pre id="console-cypher-pre" class="text-xs font-mono bg-slate-950 text-sky-300 p-4 rounded-2xl border border-slate-800 overflow-x-auto leading-relaxed">Run a trace to inspect the backend Cypher evidence.</pre>
+                <form id="trace-form" class="integration-controls"><label>Origin asset <input id="trace-origin" value="TX_882" required></label><label>Maximum hops <input id="trace-hops" type="number" min="1" max="12" value="10" required></label><button>Run cascade trace</button></form><pre id="trace-result" class="integration-result"></pre><pre id="console-cypher-pre" class="text-xs font-mono bg-slate-950 text-sky-300 p-4 rounded-2xl border border-slate-800 overflow-x-auto leading-relaxed">Run a trace to inspect the backend Cypher evidence.</pre>
             </div>
 
             <!-- Sub-Page 3: SCADA MCP Agent Loop -->
@@ -660,6 +660,6 @@ RETURN path, sub.capacity_mw;</pre>
         </div>
     </div>
 
-    <script src="assets/grid-icons.js?v=82017f277623"></script><script src="assets/world.js?v=b6fbd693efa1"></script><script src="assets/app.js?v=a2ad95693365"></script><script src="assets/features.js?v=1eaa45fa9ba9"></script>
+    <script src="assets/grid-icons.js?v=82017f277623"></script><script src="assets/world.js?v=02948cf97b12"></script><script src="assets/app.js?v=dfc3a4f36646"></script><script src="assets/features.js?v=faf495b6b9db"></script>
 </body>
 </html>

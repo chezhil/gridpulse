@@ -29,6 +29,13 @@
         #realistic-world-canvas:active {
             cursor: grabbing;
         }
+        /* Let pointer drags scrub the corridor on touch screens instead of being taken over by the browser. */
+        #realistic-world-canvas { touch-action: none; }
+        /* Evidence must stay copyable even though the landing chrome disables selection. */
+        pre, code, input, textarea, td, .integration-result, .feature-pre, .feature-meta, .feature-list article,
+        #ask-grid-answer, #console-mcp-log, #console-cypher-pre, #trace-result, #agent-result, #audit-result {
+            user-select: text;
+        }
         .transparent-header {
             background: transparent;
             backdrop-filter: none;
@@ -189,3 +196,10 @@ html:not(.dark) .feature-page h2,html:not(.dark) .feature-card h3{color:#0f172a}
 @keyframes authSuccess{50%{transform:scale(1.012)}to{transform:scale(1)}}
 @keyframes authError{20%,60%{transform:translateX(-3px)}40%,80%{transform:translateX(3px)}to{transform:translateX(0)}}
 @media(prefers-reduced-motion:reduce){.app-view{transition:none}.app-view.view-hidden{transform:none;filter:none}#view-gateway.view-active .gateway-hero,#view-gateway.view-active .gateway-auth-card,#view-console.view-active>header,#view-console.view-active .console-main,.gateway-auth-card.is-authenticating #gateway-message::before,.gateway-auth-card.is-auth-success,.gateway-auth-card.is-auth-error,#scada-topology-view:fullscreen,#scada-topology-view.topology-expanded,#scada-topology-view.topology-returning,#scada-topology-view:fullscreen canvas,#scada-topology-view.topology-expanded canvas,#scada-topology-view.topology-returning canvas{animation:none}.scada-nav-link,.feature-button{transition:none}}
+
+/* Day mode: console results and feature text were inheriting the night palette on white panels. */
+html:not(.dark) #view-console .integration-result,html:not(.dark) .integration-controls label,html:not(.dark) .integration-controls input,html:not(.dark) #console-audit-tbody td{color:#0f172a}
+html:not(.dark) .integration-controls input{border-color:#94a3b8;background:#fff}
+html:not(.dark) .feature-pre{color:#0e7490}html:not(.dark) .feature-metrics,html:not(.dark) .feature-metrics span{color:#334155}
+html:not(.dark) .feature-status{color:#b45309}html:not(.dark) .feature-copy,html:not(.dark) .feature-meta,html:not(.dark) .feature-form label{color:#475569}
+button[onclick="toggleDayNight()"]:focus-visible,.scada-nav-link:focus-visible{outline:2px solid #38bdf8;outline-offset:2px}

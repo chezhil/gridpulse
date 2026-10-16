@@ -29,7 +29,7 @@
     { selector: 'node.HydroPlant', style: icon('HydroPlant','#38bdf8',34,34) },
     { selector: 'node.Tower', style: icon('Tower','#45caff',34,34) },
     { selector: 'node.Substation', style: icon('Substation','#38bdf8',34,34) },
-    { selector: 'node.BESS', style: icon('BESS','#a78bfa',34,34) },
+    { selector: 'node.BESS', style: icon('BESS','#a855f7',34,34) },
     { selector: 'node.Consumer', style: icon('Consumer','#94a3b8',31,31) },
     { selector: 'node.category-HOSPITAL', style: icon('HOSPITAL','#34d399',34,34) },
     { selector: 'node.category-RESIDENTIAL', style: icon('RESIDENTIAL','#45caff',34,34) },

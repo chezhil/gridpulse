@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GridPulse Lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<script src="assets/vendor/cytoscape.min.js"></script>
 <style>
 :root{--bg:#040814;--panel:#0b1222;--panel2:#101a30;--line:#1e2a44;--text:#e6edf7;--muted:#8a9bb8;--cyan:#38bdf8;--green:#10b981;--amber:#f59e0b;--red:#ef4444;--purple:#a855f7;--mono:'JetBrains Mono',ui-monospace,monospace}
 *{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Inter,system-ui,sans-serif}
@@ -32,6 +32,7 @@ textarea{width:100%;font:12px var(--mono);min-height:260px}input[type=number]{wi
 .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}.kpi div{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 .kpi b{display:block;font:600 18px 'Space Grotesk'}.kpi small{color:var(--muted);font-size:11px;text-transform:uppercase}
 table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600}
+#simOut,#memInc,#auOut,#anN1Out,#bOut{overflow-x:auto}
 .mono{font-family:var(--mono);font-size:12px}.muted{color:var(--muted)}.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
 .pill{display:inline-block;padding:1px 7px;border-radius:999px;font:600 11px var(--mono);border:1px solid var(--line)}
 .pill.ok{border-color:#065f46}.pill.bad{border-color:#7f1d1d}.pill.warn{border-color:#78350f}
@@ -67,16 +68,16 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
 <body>
 <header>
   <h1>Grid<span>Pulse</span> Lab</h1><a class="tag" href="index.html#networks">← Console</a>
-  <nav id="tabs">
-    <button data-t="live" class="on">Live Ops</button><button data-t="askgrid">Ask the Grid</button><button data-t="builder">Network Builder</button>
-    <button data-t="sim">Test Cases</button><button data-t="analysis">Analysis</button>
-    <button data-t="agent">AI Advisor</button><button data-t="memory">Memory</button>
-    <button data-t="bench">Benchmark</button><button data-t="audit">Audit</button>
+  <nav id="tabs" role="tablist" aria-label="Lab sections">
+    <button data-t="live" class="on" role="tab" aria-selected="true">Live Ops</button><button data-t="askgrid" role="tab" aria-selected="false">Ask the Grid</button><button data-t="builder" role="tab" aria-selected="false">Network Builder</button>
+    <button data-t="sim" role="tab" aria-selected="false">Test Cases</button><button data-t="analysis" role="tab" aria-selected="false">Analysis</button>
+    <button data-t="agent" role="tab" aria-selected="false">AI Advisor</button><button data-t="memory" role="tab" aria-selected="false">Memory</button>
+    <button data-t="bench" role="tab" aria-selected="false">Benchmark</button><button data-t="audit" role="tab" aria-selected="false">Audit</button>
   </nav>
   <div id="auth">
     <span id="who">not signed in</span>
-    <select id="role"><option value="operator">operator</option><option value="engineer">engineer</option><option value="auditor">auditor</option></select>
-    <input id="user" placeholder="username" size="10" value="LAB_OPERATOR">
+    <select id="role" aria-label="Role"><option value="operator">operator</option><option value="engineer">engineer</option><option value="auditor">auditor</option></select>
+    <input id="user" aria-label="Username" placeholder="username" size="10" value="LAB_OPERATOR">
     <button class="b p" id="login">Sign in (demo)</button>
   </div>
 </header>
@@ -237,7 +238,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
 </main>
 <div id="toast"></div>
 <script src="assets/grid-icons.js?v=82017f277623"></script>
-<script src="assets/lab-editor.js?v=12c4912526c9"></script>
-<script src="assets/lab.js?v=f0994e40e950"></script>
+<script src="assets/lab-editor.js?v=82d675ae3c0c"></script>
+<script src="assets/lab.js?v=c94b14c7f6b6"></script>
 </body>
 </html>

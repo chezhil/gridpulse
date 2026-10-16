@@ -17,8 +17,17 @@
   }
   async function api(path, opts = {}) {
     const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) };
-    const res = await fetch(API + path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+    let res;
+    try {
+      // Agent and rehearsal calls can take a while, but a request must never hang the UI forever.
+      res = await fetch(API + path, { ...opts, headers: { ...headers, ...(opts.headers || {}) }, signal: AbortSignal.timeout(opts.timeoutMs || 180000) });
+    } catch (e) {
+      throw new Error(e.name === 'TimeoutError' ? 'The server took too long to answer; try again' : 'Cannot reach the GridPulse API');
+    }
     const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && token) {
+      token = null; ['gp_lab_token', 'gp_lab_role', 'gp_lab_user'].forEach((k) => sessionStorage.removeItem(k)); showWho();
+    }
     if (!res.ok) {
       const d = data.detail;
       let msg = typeof d === 'string' ? d : d?.message || `HTTP ${res.status}`;
@@ -35,7 +44,7 @@
   // ---------------- tabs ----------------
   $('tabs').addEventListener('click', (e) => {
     const t = e.target.dataset.t; if (!t) return;
-    document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
+    document.querySelectorAll('#tabs button').forEach((b) => { b.classList.toggle('on', b.dataset.t === t); b.setAttribute('aria-selected', String(b.dataset.t === t)); });
     document.querySelectorAll('main section').forEach((s) => s.classList.toggle('on', s.id === t));
     Object.values(cys).forEach((c) => c && c.resize());
     if (t === 'builder') { editor.resize(); editor.cy.fit(undefined, 30); }
@@ -51,7 +60,7 @@
     const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: $('user').value || 'LAB_OPERATOR', password: 'gridpulse2026', role: $('role').value }) });
     token = r.access_token; role = r.role;
     sessionStorage.setItem('gp_lab_token', token); sessionStorage.setItem('gp_lab_role', role); sessionStorage.setItem('gp_lab_user', r.operator_id);
-    showWho(); connectWs(); loadNetworks(); toast('Signed in', true);
+    showWho(); connectWs(); loadNetworks().catch((e) => toast('Networks: ' + e.message)); toast('Signed in', true);
   });
 
   // ---------------- graph rendering ----------------
@@ -61,7 +70,7 @@
     { selector: 'node.HydroPlant', style: icon('HydroPlant','#38bdf8',34,34) },
     { selector: 'node.Tower', style: icon('Tower','#45caff',34,34) },
     { selector: 'node.Substation', style: icon('Substation','#38bdf8',34,34) },
-    { selector: 'node.BESS', style: icon('BESS','#a78bfa',34,34) },
+    { selector: 'node.BESS', style: icon('BESS','#a855f7',34,34) },
     { selector: 'node.Consumer', style: icon('Consumer','#94a3b8',30,30) },
     { selector: 'node.category-HOSPITAL', style: icon('HOSPITAL','#34d399',34,34) },
     { selector: 'node.category-RESIDENTIAL', style: icon('RESIDENTIAL','#45caff',34,34) },
@@ -170,14 +179,14 @@
     for (const c of s.consumers || []) cy.getElementById(c.id).toggleClass('off', c.energized === false);
   }
   function stepHtml(x) {
-    const head = { start: '▶ Fault', context: `📚 Graph briefing: ${x.tool}`, wait: '⏳ Waiting', thought: '💭 Model', tool: `🔧 ${x.tool}`, tool_error: `⚠ ${x.tool} error`, submit: '📝 Plan submitted', verdict: `⚖ Graph guard: ${x.verdict}`, fallback: '↩ Fallback', done: '✅ Done' }[x.kind] || x.kind;
+    const head = { start: '▶ Fault', context: `📚 Graph briefing: ${esc(x.tool)}`, wait: '⏳ Waiting', thought: '💭 Model', tool: `🔧 ${esc(x.tool)}`, tool_error: `⚠ ${esc(x.tool)} error`, submit: '📝 Plan submitted', verdict: `⚖ Graph guard: ${esc(x.verdict)}`, fallback: '↩ Fallback', done: '✅ Done' }[x.kind] || esc(x.kind);
     let body = '';
     if (x.kind === 'tool' || x.kind === 'context') body = `<div class="mono">${esc(JSON.stringify(x.input))}</div><div>${esc(x.result)} <span class="muted">(${fmt(x.server_ms, 3)} ms graph)</span></div>` +
       (x.cypher?.length ? `<details><summary>Cypher & evidence</summary><pre>${esc(x.cypher.join('\n\n'))}\n\n${esc((x.evidence_hashes || []).join('\n'))}</pre></details>` : '');
     else if (x.kind === 'submit') body = `<div>${esc(x.summary)}</div><div class="mono">${esc(JSON.stringify(x.plan))}</div>`;
     else if (x.kind === 'verdict') body = `<div>${esc(x.summary || '')}</div>${x.reasons?.length ? `<div class="bad mono">${esc(x.reasons.join('; '))}</div>` : ''}`;
     else body = `<div>${esc(x.text || x.error || '')}</div>`;
-    return `<div class="step ${x.kind}"><b>${head}</b> <span class="muted small">${esc((x.at || '').slice(11, 19))}</span>${body}</div>`;
+    return `<div class="step ${esc(x.kind)}"><b>${head}</b> <span class="muted small">${esc((x.at || '').slice(11, 19))}</span>${body}</div>`;
   }
   function memorySummary(mem) {
     const parts = [];
@@ -307,9 +316,9 @@
   async function loadNetworks(selectId) {
     if (!token) return;
     const [list, tpl] = await Promise.all([api('/api/networks'), api('/api/networks/templates')]);
-    $('tplSel').innerHTML = tpl.templates.map((t) => `<option value="${t.id}" title="${esc(t.description)}">${esc(t.name)} (${t.counts.buses + t.counts.substations} buses)</option>`).join('');
-    $('netSel').innerHTML = '<option value="">— your saved networks —</option>' + list.networks.map((n) => `<option value="${n.id}">${esc(n.name)} · ${n.id}</option>`).join('');
-    const opts = '<option value="live">Live demo grid</option>' + list.networks.map((n) => `<option value="${n.id}">${esc(n.name)} · ${n.id}</option>`).join('');
+    $('tplSel').innerHTML = tpl.templates.map((t) => `<option value="${esc(t.id)}" title="${esc(t.description)}">${esc(t.name)} (${t.counts.buses + t.counts.substations} buses)</option>`).join('');
+    $('netSel').innerHTML = '<option value="">— your saved networks —</option>' + list.networks.map((n) => `<option value="${esc(n.id)}">${esc(n.name)} · ${esc(n.id)}</option>`).join('');
+    const opts = '<option value="live">Live demo grid</option>' + list.networks.map((n) => `<option value="${esc(n.id)}">${esc(n.name)} · ${esc(n.id)}</option>`).join('');
     for (const sel of ['anTarget', 'askTarget', 'memTarget']) { const keep = $(sel).value; $(sel).innerHTML = opts; if ([...$(sel).options].some((o) => o.value === keep)) $(sel).value = keep; }
     if (selectId) { $('netSel').value = selectId; await openNetwork(selectId); }
   }
@@ -383,7 +392,7 @@
           <select data-k="type"><option value="scenario" ${c.type !== 'n1' ? 'selected' : ''}>scenario</option><option value="n1" ${c.type === 'n1' ? 'selected' : ''}>N-1 scan</option></select>
           <label>demand × <input data-k="demand_scale" type="number" step="0.05" value="${c.demand_scale ?? ''}" placeholder="1.0"></label>
           <button class="b d" data-del="${i}">✕</button></div>
-        <div class="row small">trip: <select data-k="trip" multiple size="3" style="min-width:160px">${opts.map((id) => `<option ${(c.trip || []).some((t) => t.span_id === id) ? 'selected' : ''}>${id}</option>`).join('')}</select>
+        <div class="row small">trip: <select data-k="trip" multiple size="3" style="min-width:160px">${opts.map((id) => `<option ${(c.trip || []).some((t) => t.span_id === id) ? 'selected' : ''}>${esc(id)}</option>`).join('')}</select>
           <span>battery MW <input data-k="bess" placeholder="BESS_1=40" value="${esc(Object.entries(c.bess_injection_mw || {}).map(([k, v]) => `${k}=${v}`).join(','))}" size="14"></span>
           <span>shed <input data-k="deenergize" placeholder="LOAD_A,LOAD_B" value="${esc((c.deenergize || []).join(','))}" size="14"></span></div>
       </div>`).join('') || '<p class="muted small">Pick a network, then add cases or load presets.</p>';
@@ -459,11 +468,17 @@
   });
   $('anTrace').onclick = () => busy($('anTrace'), async () => {
     const origin = $('trOrigin').value.trim().toUpperCase();
-    const body = { origin_id: origin, max_hops: 8, assume_tripped: $('trTrip').checked && !/^T\d|^SUB|^B\d/.test(origin) ? [{ span_id: origin, circuit: 'UPPER_PRIMARY' }] : [] };
+    // Only a span/line can be "tripped"; towers, buses, plants, batteries and loads are traced as-is.
+    let isSpan = false;
+    if ($('trTrip').checked) {
+      const topo = target() === 'live' ? (liveTopo || await api('/api/graph/topology')) : await api(`${base()}/topology`);
+      isSpan = topo.edges.some((e) => e.id === `${origin}:UPPER_PRIMARY`);
+    }
+    const body = { origin_id: origin, max_hops: 10, assume_tripped: isSpan ? [{ span_id: origin, circuit: 'UPPER_PRIMARY' }] : [] };
     const r = await api(target() === 'live' ? '/api/graph/trace-cascade' : `${base()}/trace`, { method: 'POST', body: JSON.stringify(body) });
     const s = r.summary;
     $('anTraceOut').innerHTML = `<p>${outcomePill(s.projection_outcome)} relief ${s.required_relief_mw ?? '—'} MW · downstream ${esc(s.downstream_substations.join(', ') || 'none')} · Tier-1 at risk ${esc(s.tier1_at_risk.join(', ') || 'none')} · ${fmt(r.timing.graph_server_ms, 3)} ms graph</p>
-      <div class="mono">${r.reachability.nodes.map((n) => `${n.id}@${n.hops}`).join(' · ')}</div>
+      <div class="mono">${esc(r.reachability.nodes.map((n) => `${n.id}@${n.hops}`).join(' · '))}</div>
       <details><summary>Cypher evidence (${r.evidence.length} queries)</summary>${r.evidence.map((e) => `<pre>${esc(e.cypher)}\nparams ${esc(JSON.stringify(e.params))}\n${e.row_count} rows · ${e.server_ms} ms · ${e.evidence_hash}</pre>`).join('')}</details>`;
   });
 
@@ -492,7 +507,7 @@
       const sm = data.summary;
       $('memSummary').innerHTML = [['incidents', sm.incidents], ['mitigated', sm.mitigated], ['solved from memory', sm.solved_from_memory],
         ['generalised reuses', sm.generalized_reuses], ['playbooks', sm.playbooks], ['retired', sm.retired_playbooks]]
-        .map(([k, v]) => `<span class="pill">${k}: <b>${v}</b></span>`).join(' ');
+        .map(([k, v]) => `<span class="pill">${esc(k)}: <b>${esc(v)}</b></span>`).join(' ');
       const inc = data.incidents;
       const maxSteps = Math.max(1, ...inc.map((i) => i.steps || 1));
       $('memCurve').innerHTML = inc.length ? `<div style="display:flex;align-items:flex-end;gap:3px;height:120px;border-bottom:1px solid var(--line);padding-top:6px;overflow-x:auto">` +
@@ -541,7 +556,7 @@
   $('bRun').onclick = () => busy($('bRun'), async () => {
     $('bOut').innerHTML = '<p class="muted">Running…</p>';
     const r = await api('/api/graph/benchmark', { method: 'POST', body: JSON.stringify({ size: Number($('bSize').value), max_hops: Number($('bHops').value), runs: Number($('bRuns').value) }) });
-    const rows = Object.entries(r.engines).map(([k, v]) => `<tr><td class="mono">${k}</td><td>${v.engine_time.median_ms}</td><td>${v.engine_time.p95_ms}</td><td>${v.client_roundtrip.median_ms}</td></tr>`).join('');
+    const rows = Object.entries(r.engines).map(([k, v]) => `<tr><td class="mono">${esc(k)}</td><td>${v.engine_time.median_ms}</td><td>${v.engine_time.p95_ms}</td><td>${v.client_roundtrip.median_ms}</td></tr>`).join('');
     $('bOut').innerHTML = `<p>${r.grid.buses} buses · ${r.grid.lines} lines · ${r.max_hops} hops · median reach ${r.median_reach_size} buses · ${outcomePill(r.results_verified_equal ? 'RESULTS EQUAL' : 'MISMATCH')} ${r.load.reused ? '(graph reused)' : `(loaded in ${r.load.load_s}s)`}</p>
       <table><tr><th>Engine</th><th>median ms</th><th>p95 ms</th><th>round trip median ms</th></tr>${rows}</table>
       ${r.n1_lodf ? `<p>LODF N-1 on this mesh: ${r.n1_lodf.branches} outages in ${r.n1_lodf.n1_scan_ms} ms (factorisation ${r.n1_lodf.factorization_ms} ms), ${r.n1_lodf.insecure_outages} insecure</p>` : ''}

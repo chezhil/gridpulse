@@ -19,7 +19,10 @@
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (response.status === 401 && session) signOut();
-      throw new Error(typeof data.detail === 'string' ? data.detail : data.detail?.message || data.detail?.code || `Request failed (${response.status})`);
+      const d = data.detail;
+      // FastAPI validation errors arrive as a list of {loc, msg}.
+      const message = typeof d === 'string' ? d : Array.isArray(d) ? d.map(x => `${(x.loc || []).slice(1).join('.')}: ${x.msg}`).join('; ') : d?.message || d?.code;
+      const error = new Error(message || `Request failed (${response.status})`); error.status = response.status; throw error;
     }
     return data;
   }
@@ -28,7 +31,8 @@
     $('console-status-dot').style.background = healthy ? '#34d399' : '#f59e0b';
   }
   function connection(text) { say('connection-status',text); say('backend-connection-pill',text); controls(); }
-  async function guarded(fn) { try { say('action-message',''); return await fn(); } catch(e) { say('action-message',e.message); } }
+  // Background refreshes pass silent so they don't wipe a message the operator hasn't read yet.
+  async function guarded(fn, silent = false) { try { if (!silent) say('action-message',''); return await fn(); } catch(e) { if (!silent || !$('action-message')?.textContent) say('action-message',e.message); } }
   let loginInFlight = false;
   async function login(body) {
     if (loginInFlight) return;
@@ -61,7 +65,8 @@
   window.loginWithRole = (username,role) => login({username,role:roles[role] || role,demo:true});
   window.signOut = () => {
     session=null; healthy=false; clearTimeout(reconnect); if(socket){socket.onclose=null;socket.close();} socket=null;
-    sessionStorage.removeItem('gridpulse_live_session'); topology=null; audit=[];lastSnapshot=null;
+    sessionStorage.removeItem('gridpulse_live_session'); ['gp_lab_token','gp_lab_role','gp_lab_user'].forEach(k=>sessionStorage.removeItem(k)); topology=null; audit=[];lastSnapshot=null;
+    ['trace-result','agent-result','audit-result','action-message'].forEach(id=>say(id,''));
     window.gridpulseFeatures?.reset();
     ['c-kpi-latency','c-kpi-hydro','c-kpi-load','c-kpi-bess','c-kpi-hospital'].forEach(id=>say(id,'—'));
     $('console-audit-tbody').replaceChildren(); say('console-mcp-log','Awaiting backend agent activity.');
@@ -73,7 +78,7 @@
   function route() {
     const page=location.hash.slice(1);
     if(['topology','cypher','mcp','audit','askgrid','networks','learning'].includes(page)) {setAppView(session?'console':'gateway');if(session){switchPage(page);window.gridpulseFeatures?.activate(page);}}
-    else if(page==='gateway')setAppView('gateway');
+    else if(page==='gateway'){if(session){location.hash='topology';return;}setAppView('gateway');}
     else setAppView('landing');
   }
   addEventListener('hashchange',route);
@@ -93,7 +98,7 @@
     const hydro=topology?.nodes.find(n=>n.id==='HYDRO_ALPINE_01')?.properties;
     say('c-kpi-hydro',number(hydro?.output_mw??hydro?.generation_mw,'MW'));
     say('load-note',`City demand · ${number(m.city_load_pct,'%')}`);say('bess-note',`BESS · ${number(data.bess?.soc_pct,'% SOC')}`);say('hospital-note','Backend telemetry');
-    $('c-kpi-hospital').style.color=m.tier1_hospital_status==='PROTECTED'?'#10b981':m.tier1_hospital_status==='AT_RISK'?'#d97706':'#f43f5e';
+    $('c-kpi-hospital').style.color=m.tier1_hospital_status==='PROTECTED'?'#10b981':m.tier1_hospital_status==='AT_RISK'?'#f59e0b':'#ef4444';
     const readable = value => String(value||'').replace(/[_.-]+/g,' ').replace(/\s+/g,' ').trim().toLowerCase().replace(/^./,letter=>letter.toUpperCase()).replace(/\btx (\d+)/g,'TX $1');
     const rawStatus=data.scenario?.status||'UNKNOWN';
     const plainStatus=readable(rawStatus);
@@ -108,6 +113,8 @@
   async function health(){try{const h=await api('/health');healthy=h.status==='HEALTHY';connection(healthy?'CONNECTED · authenticated simulation':'DEGRADED · FalkorDB unavailable');}catch(e){healthy=false;connection(`OFFLINE · ${e.message}`);}}
   function connect(){
     if(!session)return;
+    // Never keep two sockets: each would carry its own reconnect loop.
+    clearTimeout(reconnect);if(socket){socket.onclose=null;socket.close();socket=null;}
     const url=new URL(base+'/ws/telemetry');url.protocol=url.protocol==='https:'?'wss:':'ws:';url.searchParams.set('token',session.access_token);
     socket=new WebSocket(url);socket.onmessage=e=>{try{snapshot(JSON.parse(e.data));}catch{say('action-message','Invalid telemetry received.');}};
     socket.onclose=e=>{healthy=false;connection('DISCONNECTED · reconnecting');if(e.code===1008){signOut();say('gateway-message','Session expired. Sign in again.');}else if(session)reconnect=setTimeout(()=>{health();connect();},3000);};
@@ -128,8 +135,8 @@
   window.triggerFaultSimulation=()=>triggerScenario(activeScenarioId);
   window.resetGrid=()=>{isFaultActive=false;isRerouted=false;say('hud-status-title','ILLUSTRATIVE CORRIDOR · Open console for live data');};
   window.toggleAutoCycle=enabled=>{clearInterval(autoCycleTimer);if(enabled){let id=1;triggerScenario(id);autoCycleTimer=setInterval(()=>triggerScenario(id=id%3+1),5500);}};
-  $('trace-form').onsubmit=e=>{e.preventDefault();guarded(async()=>{say('trace-result','Tracing…');const result=await api('/api/graph/trace-cascade',{method:'POST',body:JSON.stringify({origin_id:$('trace-origin').value,max_hops:Number($('trace-hops').value)})});say('trace-result',pretty(result));say('console-cypher-pre',(result.evidence||[]).map(x=>x.cypher).filter(Boolean).join('\n\n')||'No Cypher evidence returned.');}).then(()=>{if($('trace-result').textContent==='Tracing…')say('trace-result','Trace unavailable. See the error above.');});};
-  $('agent-form').onsubmit=e=>{e.preventDefault();guarded(async()=>{say('agent-result','Requesting agent advice…');try{const result=await api('/api/mcp/agent/advise',{method:'POST',body:JSON.stringify({question:$('agent-question').value,execute:$('agent-execute').checked})});say('agent-result',pretty(result));await loadAudit();}catch(error){say('agent-result',error.message);throw error;}});};
+  $('trace-form').onsubmit=e=>{e.preventDefault();guarded(async()=>{say('trace-result','Tracing…');const result=await api('/api/graph/trace-cascade',{method:'POST',body:JSON.stringify({origin_id:$('trace-origin').value.trim().toUpperCase(),max_hops:Number($('trace-hops').value)})});say('trace-result',pretty(result));say('console-cypher-pre',(result.evidence||[]).map(x=>x.cypher).filter(Boolean).join('\n\n')||'No Cypher evidence returned.');}).then(()=>{if($('trace-result').textContent==='Tracing…')say('trace-result','Trace unavailable. See the error above.');});};
+  $('agent-form').onsubmit=e=>{e.preventDefault();const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit?.disabled)return;guarded(async()=>{say('agent-result','Requesting agent advice…');if(submit)submit.disabled=true;try{const result=await api('/api/mcp/agent/advise',{method:'POST',timeoutMs:180000,body:JSON.stringify({question:$('agent-question').value,execute:$('agent-execute').checked})});say('agent-result',pretty(result));await loadAudit();}catch(error){say('agent-result',error.message);throw error;}finally{if(submit)submit.disabled=false;}});};
   $('audit-refresh').onclick=()=>guarded(loadAudit);
   $('audit-verify').onclick=()=>guarded(async()=>say('audit-result',pretty(await api('/api/audit/verify'))));
   $('audit-export').onclick=()=>guarded(async()=>{await loadAudit();const url=URL.createObjectURL(new Blob([pretty(audit)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='gridpulse-audit.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
@@ -151,7 +158,7 @@
   });
   document.addEventListener('fullscreenchange',updateTopologyFullscreen);
   document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(document.fullscreenElement===topologyView){document.exitFullscreen();return;}if(topologyFallbackExpanded){topologyFallbackExpanded=false;topologyView.classList.remove('topology-expanded');document.body.classList.remove('topology-expanded-active');updateTopologyFullscreen();}});
-  const topoColors={line:'#0ea5e9',flow:'#72f7ff',down:'#f43f5e',node:'#34d399'};
+  const topoColors={line:'#0ea5e9',flow:'#72f7ff',down:'#ef4444',node:'#34d399'};
   function topologyLayout(nodes,w,h){
     const compact=w<900, left=compact?50:72, corridorEnd=w*.69;
     const towerY=h*.51, subX=w*.80, subY=towerY;
@@ -168,7 +175,7 @@
     const category=node.properties?.category;
     const kind=node.label==='Consumer'?category:node.label;
     const bad=/TRIPPED|OFFLINE|FAILED|FAULT|AT_RISK/.test(node.properties?.status||'') || node.properties?.energized===false;
-    const color=bad?topoColors.down:kind==='Tower'?(dark?'#c5e9fa':'#0369a1'):kind==='BESS'?'#a78bfa':kind==='HOSPITAL'?'#34d399':kind==='HydroPlant'?'#38bdf8':'#45caff';
+    const color=bad?topoColors.down:kind==='Tower'?(dark?'#c5e9fa':'#0369a1'):kind==='BESS'?'#a855f7':kind==='HOSPITAL'?'#34d399':kind==='HydroPlant'?'#38bdf8':'#45caff';
     const tower=kind==='Tower';
     ctx.save();ctx.translate(x,y);
     ctx.fillStyle=dark?'#0d2238':'#e0f2fe';ctx.strokeStyle=bad?'#fb7185':color;ctx.lineWidth=1.25;
@@ -218,8 +225,9 @@
     ctx.fillText(`${nodes.length} assets · ${topology.edges.length} connections`,16,h-15);
     ctx.fillStyle=topoColors.flow;ctx.beginPath();ctx.arc(w-117,h-19,2.5,0,Math.PI*2);ctx.fill();ctx.fillStyle=dark?'#cbd5e1':'#475569';ctx.fillText('Current flow',w-108,h-15);
   };
-  setInterval(()=>{if(session){health();if(lastSeen&&Date.now()-lastSeen>10000){healthy=false;connection('STALE · waiting for telemetry');}if(healthy)guarded(loadTopology);}},10000);
+  setInterval(()=>{if(session){health();if(lastSeen&&Date.now()-lastSeen>10000){healthy=false;connection('STALE · waiting for telemetry');}if(healthy)guarded(loadTopology,true);}},10000);
   localStorage.removeItem('gridpulse_session');resetGrid();controls();route();
   try{session=JSON.parse(sessionStorage.getItem('gridpulse_live_session'));}catch{session=null;}
-  if(session)api('/api/auth/session').then(enter).catch(()=>signOut());
+  // Only a rejected session signs out; a network blip on reload keeps it and lets the reconnect loop recover.
+  if(session)api('/api/auth/session').then(enter).catch(e=>{if(e.status)signOut();else enter();});
 })();

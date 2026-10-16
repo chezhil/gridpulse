@@ -99,6 +99,8 @@
     try{const id=$('learning-network-select').value;if(!id)throw Error('Select a saved network.');const data=await client.api(`/api/networks/${encodeURIComponent(id)}/rehearse`,{method:'POST',body:JSON.stringify({max_cases:Number($('learning-cases').value)}),timeoutMs:120000});say('learning-status',`Completed ${data.cases??0} cases · saved ${data.saved??0} · new playbooks ${data.new_playbooks??0} · reused ${data.solved_from_memory??0}.`);await loadNetworkMemory();}
     catch(error){showError('learning-status',error);}finally{button.disabled=false;}
   });
-  window.gridpulseFeatures={activate,reset(){templates=[];networks=[];sampleContent='';importedSpec=null;loadedAt=0;$('network-save-import').disabled=true;}};
+  window.gridpulseFeatures={activate,reset(){templates=[];networks=[];sampleContent='';importedSpec=null;loadedAt=0;$('network-save-import').disabled=true;
+    // The next operator must not see the previous one's answers.
+    ['ask-grid-answer','ask-grid-cypher','ask-grid-meta','ask-grid-status','learning-status','network-status'].forEach(id=>{if($(id))$(id).textContent='';});$('ask-grid-rows')?.replaceChildren();}};
   if(client.session)activate(location.hash.slice(1));
 })();
