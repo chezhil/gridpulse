@@ -154,16 +154,24 @@ def test_simulate_rejects_bad_cases(reg, live_client):
         nw.simulate(owner, nid, [{"trip": [{"span_id": "NOPE"}]}], base=live_client)
 
 
-def test_ieee118_matches_pandapower_reference():
-    """GridPulse's dc-pf/1 flows on the public IEEE 118-bus case vs pandapower rundcpp (stored reference)."""
+@pytest.mark.parametrize("n,branches", [(14, 20), (30, 41), (118, 186)])
+def test_ieee_cases_match_pandapower_reference(n, branches):
+    """GridPulse's dc-pf/1 flows on public IEEE cases (via our MATPOWER importer) vs pandapower rundcpp."""
     import json
     from pathlib import Path
 
     from graph.thermal import project_loading
-    data = json.loads((Path(nw.__file__).parent / "data" / "ieee118.json").read_text())
+    data = json.loads((Path(nw.__file__).parent / "data" / f"ieee{n}.json").read_text())
     p = project_loading(nw.snapshot_from_spec(data["spec"]))
     assert p["outcome"] == "WITHIN_LIMITS"
     ours = {c["span_id"]: c["flow_mw"] * (-1 if c["direction"] == "REVERSE" else 1) for c in p["circuits"]}
-    assert len(data["reference_flows_mw"]) == 186
+    assert len(data["reference_flows_mw"]) == branches
     for branch, ref in data["reference_flows_mw"].items():
         assert ours[branch] == pytest.approx(ref, abs=0.01), branch
+
+
+def test_layout_is_kept_and_filtered():
+    spec = nw.get_template("ring")
+    spec["layout"] = {"R1": {"x": 10, "y": 20.04}, "GHOST": {"x": 1, "y": 1}, "R2": {"x": "a", "y": 2}}
+    out, _ = nw.validate_spec(spec)
+    assert out["layout"] == {"R1": {"x": 10.0, "y": 20.0}}

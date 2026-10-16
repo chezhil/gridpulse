@@ -21,6 +21,7 @@ import re
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import topology as topo
@@ -72,7 +73,7 @@ def validate_spec(spec: Any) -> Tuple[Dict[str, Any], List[str]]:
     if not isinstance(spec, dict):
         raise InvalidRequestError("spec must be an object")
     sections = ("generators", "buses", "substations", "lines", "loads", "batteries")
-    unknown = sorted(set(spec) - set(sections) - {"name", "description"})
+    unknown = sorted(set(spec) - set(sections) - {"name", "description", "layout"})
     if unknown:
         problems.append(f"unknown sections {unknown}")
     for key in sections:
@@ -208,6 +209,17 @@ def validate_spec(spec: Any) -> Tuple[Dict[str, Any], List[str]]:
         soc = _num(bt.get("soc_pct", 80), f"{where}.soc_pct", problems, 0, 100)
         if bid and sub in sub_ids and mx and soc is not None:
             out["batteries"].append({"id": bid, "substation": sub, "max_discharge_mw": mx, "soc_pct": soc})
+
+    # Optional drawing positions from the editor: {element_id: {"x": .., "y": ..}}; unknown ids are dropped.
+    layout = spec.get("layout") or {}
+    out["layout"] = {}
+    if not isinstance(layout, dict):
+        problems.append("layout: must be an object of {id: {x, y}}")
+    else:
+        for el_id, xy in layout.items():
+            if el_id in seen and isinstance(xy, dict) and all(
+                    isinstance(xy.get(k), (int, float)) and not isinstance(xy.get(k), bool) and math.isfinite(xy[k]) for k in ("x", "y")):
+                out["layout"][el_id] = {"x": round(float(xy["x"]), 1), "y": round(float(xy["y"]), 1)}
 
     node_count = len(seen)
     if node_count > MAX_NODES:
@@ -501,13 +513,23 @@ def _meshed_template() -> Dict[str, Any]:
     }
 
 
-def _ieee118_template() -> Dict[str, Any]:
-    from pathlib import Path
-    return json.loads((Path(__file__).parent / "data" / "ieee118.json").read_text())["spec"]
+DATA_DIR = Path(__file__).parent / "data"
+SAMPLE_FILES = {"ieee14": "ieee14.m", "ieee30": "ieee30.m", "ieee118": "ieee118.m"}
+
+
+def _ieee_template(n: int):
+    return lambda: json.loads((DATA_DIR / f"ieee{n}.json").read_text())["spec"]
 
 
 TEMPLATES = {"demo_corridor": _demo_template, "ring": _ring_template, "meshed_city": _meshed_template,
-             "ieee118": _ieee118_template}
+             "ieee14": _ieee_template(14), "ieee30": _ieee_template(30), "ieee118": _ieee_template(118)}
+
+
+def sample_file(name: str) -> str:
+    """Bundled public MATPOWER case files, for trying the importer."""
+    if name not in SAMPLE_FILES:
+        raise UnknownEntityError(f"No sample '{name}'", available=sorted(SAMPLE_FILES))
+    return (DATA_DIR / SAMPLE_FILES[name]).read_text()
 
 
 def list_templates() -> Dict[str, Any]:

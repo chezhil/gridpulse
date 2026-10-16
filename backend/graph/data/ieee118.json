@@ -1,13 +1,13 @@
 {
  "spec": {
   "name": "IEEE 118-bus test system",
-  "description": "Public IEEE 118-bus case (via pandapower) with synthetic ratings, tiers and batteries; see build_ieee118.py.",
+  "description": "Public IEEE 118-bus case (via pandapower), imported with GridPulse's MATPOWER importer. Ratings, priority tiers and batteries are synthetic overlays.",
   "generators": [
    {
     "id": "GEN_000_B069",
     "name": "Slack",
     "output_mw": 0.0,
-    "capacity_mw": 805.2,
+    "capacity_mw": null,
     "connects_to": "B069"
    },
    {
@@ -834,14 +834,14 @@
     "from": "B008",
     "to": "B009",
     "impedance_pu": 0.0305,
-    "limit_mw": 720.0
+    "limit_mw": 730.0
    },
    {
     "id": "BR008",
     "from": "B009",
     "to": "B010",
     "impedance_pu": 0.0322,
-    "limit_mw": 720.0
+    "limit_mw": 730.0
    },
    {
     "id": "BR009",
@@ -2144,8 +2144,8 @@
     "id": "LOAD_B011",
     "substation": "B011",
     "mw_demand": 70.0,
-    "priority_tier": 1,
-    "category": "HOSPITAL"
+    "priority_tier": 3,
+    "category": "INDUSTRIAL"
    },
    {
     "id": "LOAD_B012",
@@ -2165,15 +2165,15 @@
     "id": "LOAD_B014",
     "substation": "B014",
     "mw_demand": 14.0,
-    "priority_tier": 2,
-    "category": "RESIDENTIAL"
+    "priority_tier": 1,
+    "category": "HOSPITAL"
    },
    {
     "id": "LOAD_B015",
     "substation": "B015",
     "mw_demand": 90.0,
-    "priority_tier": 1,
-    "category": "HOSPITAL"
+    "priority_tier": 3,
+    "category": "INDUSTRIAL"
    },
    {
     "id": "LOAD_B016",
@@ -2305,8 +2305,8 @@
     "id": "LOAD_B039",
     "substation": "B039",
     "mw_demand": 27.0,
-    "priority_tier": 2,
-    "category": "RESIDENTIAL"
+    "priority_tier": 1,
+    "category": "HOSPITAL"
    },
    {
     "id": "LOAD_B040",
@@ -2375,8 +2375,8 @@
     "id": "LOAD_B049",
     "substation": "B049",
     "mw_demand": 87.0,
-    "priority_tier": 1,
-    "category": "HOSPITAL"
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
    },
    {
     "id": "LOAD_B050",
@@ -2543,8 +2543,8 @@
     "id": "LOAD_B080",
     "substation": "B080",
     "mw_demand": 130.0,
-    "priority_tier": 1,
-    "category": "HOSPITAL"
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
    },
    {
     "id": "LOAD_B082",
@@ -2585,8 +2585,8 @@
     "id": "LOAD_B088",
     "substation": "B088",
     "mw_demand": 48.0,
-    "priority_tier": 2,
-    "category": "RESIDENTIAL"
+    "priority_tier": 1,
+    "category": "HOSPITAL"
    },
    {
     "id": "LOAD_B090",
@@ -2725,8 +2725,8 @@
     "id": "LOAD_B109",
     "substation": "B109",
     "mw_demand": 8.0,
-    "priority_tier": 2,
-    "category": "RESIDENTIAL"
+    "priority_tier": 1,
+    "category": "HOSPITAL"
    },
    {
     "id": "LOAD_B110",
@@ -2787,20 +2787,14 @@
   ],
   "batteries": [
    {
-    "id": "BESS_B011",
-    "substation": "B011",
+    "id": "BESS_B014",
+    "substation": "B014",
     "max_discharge_mw": 60.0,
     "soc_pct": 80.0
    },
    {
-    "id": "BESS_B015",
-    "substation": "B015",
-    "max_discharge_mw": 60.0,
-    "soc_pct": 80.0
-   },
-   {
-    "id": "BESS_B049",
-    "substation": "B049",
+    "id": "BESS_B039",
+    "substation": "B039",
     "max_discharge_mw": 60.0,
     "soc_pct": 80.0
    },
@@ -2811,13 +2805,24 @@
     "soc_pct": 80.0
    },
    {
-    "id": "BESS_B080",
-    "substation": "B080",
+    "id": "BESS_B088",
+    "substation": "B088",
+    "max_discharge_mw": 60.0,
+    "soc_pct": 80.0
+   },
+   {
+    "id": "BESS_B109",
+    "substation": "B109",
     "max_discharge_mw": 60.0,
     "soc_pct": 80.0
    }
   ]
  },
+ "notes": [
+  "186 of 186 branches had no rating (rateA=0): rated at 1.6 x base-case flow, min 100 MW",
+  "priority tiers are synthetic: 5 Tier-1 (hospital) bus(es), every 4th load Tier-3",
+  "added a 60 MW battery at each Tier-1 bus"
+ ],
  "reference_flows_mw": {
   "BR001": -11.7661,
   "BR002": -39.2339,

@@ -29,7 +29,7 @@ def test_network_lifecycle_over_http(api):
     alice, bob = login(api, "ALICE_HTTP"), login(api, "BOB_HTTP")
     assert api.get("/api/networks").status_code == 401
     templates = api.get("/api/networks/templates").json()["templates"]
-    assert {t["id"] for t in templates} == {"demo_corridor", "ring", "meshed_city", "ieee118"}
+    assert {t["id"] for t in templates} == {"demo_corridor", "ring", "meshed_city", "ieee14", "ieee30", "ieee118"}
 
     bad = api.post("/api/networks/validate", headers=alice, json={"spec": {"generators": []}})
     assert bad.status_code == 422 and bad.json()["detail"]["code"] == "INVALID_REQUEST"
@@ -65,3 +65,21 @@ def test_custom_network_trace_with_custom_span_ids(api):
     assert api.get(f"/api/networks/{nid}/islands", headers=alice).json()["connected"] is True
     assert api.get(f"/api/networks/{nid}/zones", headers=alice).json()["zones"]
     api.delete(f"/api/networks/{nid}", headers=alice)
+
+
+def test_import_matpower_over_http(api):
+    alice = login(api, "IMPORT_HTTP")
+    text = api.get("/api/networks/samples/ieee14").text
+    assert "mpc.branch" in text
+    conv = api.post("/api/networks/convert", headers=alice, json={"format": "matpower", "content": text, "name": "My IEEE 14",
+                                                                  "battery_mw": 25})
+    assert conv.status_code == 200, conv.text
+    body = conv.json()
+    assert body["summary"] == {"buses": 14, "branches": 20, "generators": 5, "loads": 11}
+    assert body["warnings"] == [] and any("synthetic" in n for n in body["notes"])
+    created = api.post("/api/networks", headers=alice, json={"spec": body["spec"]})
+    assert created.status_code == 201 and created.json()["counts"]["nodes"] > 14
+    bad = api.post("/api/networks/convert", headers=alice, json={"format": "matpower", "content": "mpc.bus = [1 3 0];"})
+    assert bad.status_code == 422
+    assert api.get("/api/networks/samples/nope").status_code == 404
+    api.delete(f"/api/networks/{created.json()['id']}", headers=alice)
