@@ -11,7 +11,7 @@ pages = ('index.html',)
 for page in pages:
     path = frontend / page
     html = path.read_text(encoding='utf-8')
-    assets = ['design.css', 'utilities.css', 'world.js', 'app.js']
+    assets = ['design.css', 'utilities.css', 'world.js', 'app.js', 'features.js']
     for asset in assets:
         url = f'assets/{asset}'
         digest = sha256((frontend / url).read_bytes()).hexdigest()[:12]

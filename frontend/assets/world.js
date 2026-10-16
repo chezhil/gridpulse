@@ -1512,12 +1512,15 @@
         };
 
         window.switchScadaPage = function (pageId) {
-            const pages = ['topology', 'cypher', 'mcp', 'audit'];
+            const pages = ['topology', 'cypher', 'mcp', 'audit', 'askgrid', 'networks', 'learning'];
             const labels = {
                 topology: '01 / LIVE TOPOLOGY',
                 cypher: '02 / CYPHER STUDIO',
                 mcp: '03 / SCADA MCP AGENT',
-                audit: '04 / NERC CIP AUDIT'
+                audit: '04 / NERC CIP AUDIT',
+                askgrid: '05 / ASK THE GRID',
+                networks: '06 / NETWORK LAB',
+                learning: '07 / GRID MEMORY'
             };
             pages.forEach(p => {
                 const el = document.getElementById(`scada-page-${p}`);
@@ -1525,6 +1528,11 @@
             });
             const badge = document.getElementById('active-page-badge');
             if (badge && labels[pageId]) badge.textContent = labels[pageId];
+            document.querySelectorAll('[data-scada-nav]').forEach(button => {
+                const active = button.dataset.scadaNav === pageId;
+                button.classList.toggle('scada-nav-active', active);
+                button.setAttribute('aria-current', active ? 'page' : 'false');
+            });
             const drawer = document.getElementById('scada-menu-drawer');
             if (drawer) drawer.classList.add('-translate-x-full');
             if (pageId === 'topology') setTimeout(resizeScadaTopologyCanvas, 50);

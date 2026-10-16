@@ -13,7 +13,7 @@
 
 
 
-    <link rel="stylesheet" href="assets/design.css?v=f484b7c657ca">
+    <link rel="stylesheet" href="assets/design.css?v=08bc2a14eb02">
 </head>
 <body class="text-slate-100 antialiased selection:bg-sky-500 selection:text-white">
 
@@ -499,18 +499,22 @@ RETURN path, sub.capacity_mw;</pre>
                     <button onclick="toggleScadaMenu()" class="text-xs font-mono text-slate-400 hover:text-white">✕</button>
                 </div>
                 <nav class="space-y-2 font-mono text-xs">
-                    <button onclick="switchScadaPage('topology')" class="w-full text-left px-3.5 py-2.5 rounded-xl bg-sky-500/15 text-sky-400 border border-sky-500/30 block">
+                    <button data-scada-nav="topology" aria-current="page" onclick="switchScadaPage('topology')" class="scada-nav-link scada-nav-active">
                         01 / Live Grid Topology
                     </button>
-                    <button onclick="switchScadaPage('cypher')" class="w-full text-left px-3.5 py-2.5 rounded-xl hover:bg-slate-800/50 text-slate-700 dark:text-slate-300 block">
+                    <button data-scada-nav="cypher" onclick="switchScadaPage('cypher')" class="scada-nav-link">
                         02 / Cypher Query Studio
                     </button>
-                    <button onclick="switchScadaPage('mcp')" class="w-full text-left px-3.5 py-2.5 rounded-xl hover:bg-slate-800/50 text-slate-700 dark:text-slate-300 block">
+                    <button data-scada-nav="mcp" onclick="switchScadaPage('mcp')" class="scada-nav-link">
                         03 / SCADA MCP Agent Loop
                     </button>
-                    <button onclick="switchScadaPage('audit')" class="w-full text-left px-3.5 py-2.5 rounded-xl hover:bg-slate-800/50 text-slate-700 dark:text-slate-300 block">
+                    <button data-scada-nav="audit" onclick="switchScadaPage('audit')" class="scada-nav-link">
                         04 / NERC CIP Audit Trail
                     </button>
+                    <div class="scada-nav-divider">NEW WORKSPACES</div>
+                    <button data-scada-nav="askgrid" onclick="switchScadaPage('askgrid')" class="scada-nav-link">05 / Ask the Grid</button>
+                    <button data-scada-nav="networks" onclick="switchScadaPage('networks')" class="scada-nav-link">06 / Network Lab</button>
+                    <button data-scada-nav="learning" onclick="switchScadaPage('learning')" class="scada-nav-link">07 / Grid Memory</button>
                 </nav>
             </div>
             <div class="pt-4 border-t border-slate-700/40 text-[11px] font-mono text-slate-400">
@@ -611,9 +615,44 @@ RETURN path, sub.capacity_mw;</pre>
                     </table>
                 </div>
             </div>
+
+            <section id="scada-page-askgrid" class="hidden scada-surface feature-page">
+                <div class="feature-eyebrow">05 / GRAPH INTELLIGENCE</div>
+                <h2>Ask the Grid</h2>
+                <p class="feature-copy">Ask a question about the live grid or one of your saved networks. The agent runs one guarded, read-only Cypher query and shows its evidence.</p>
+                <form id="ask-grid-form" class="feature-form">
+                    <label class="feature-grow">Question<input id="ask-grid-question" required minlength="3" maxlength="500" placeholder="Which assets are downstream of TX_882?"></label>
+                    <label>Network<select id="ask-grid-network"><option value="">Live grid</option></select></label>
+                    <button class="feature-button" type="submit">Ask the Grid</button>
+                </form>
+                <p id="ask-grid-status" class="feature-status" role="status"></p>
+                <div class="feature-grid"><article class="feature-card"><h3>Answer</h3><p id="ask-grid-answer">Ask a question to see a response.</p></article><article class="feature-card"><h3>Query evidence</h3><div id="ask-grid-meta" class="feature-meta">No query yet.</div><pre id="ask-grid-cypher" class="feature-pre"></pre></article></div>
+                <details class="feature-card"><summary>Query rows</summary><pre id="ask-grid-rows" class="feature-pre"></pre></details>
+            </section>
+
+            <section id="scada-page-networks" class="hidden scada-surface feature-page">
+                <div class="feature-eyebrow">06 / NETWORK BUILDER</div>
+                <h2>Network Lab</h2>
+                <p class="feature-copy">Create an isolated test grid from a template or import a MATPOWER case. The visual editor and test cases are available in the advanced Lab.</p>
+                <div class="feature-grid">
+                    <article class="feature-card"><h3>Start from a template</h3><form id="network-template-form" class="feature-form"><label class="feature-grow">Template<select id="network-template-select"></select></label><label class="feature-grow">Name<input id="network-name" placeholder="My grid"></label><button class="feature-button">Create network</button></form><div id="network-template-info" class="feature-meta"></div></article>
+                    <article class="feature-card"><h3>Import a grid file</h3><div class="feature-form"><label class="feature-grow">File<input id="network-file" type="file" accept=".m,.json,.txt"></label><label>Sample<select id="network-sample"><option value="ieee14">IEEE 14-bus</option><option value="ieee30">IEEE 30-bus</option><option value="ieee118">IEEE 118-bus</option></select></label><button id="network-load-sample" type="button" class="feature-button">Load sample</button></div><button id="network-convert" type="button" class="feature-button feature-secondary">Convert and validate</button><button id="network-save-import" type="button" class="feature-button" disabled>Save imported grid</button><div id="network-import-info" class="feature-meta">Choose a file or sample.</div></article>
+                </div>
+                <article class="feature-card"><h3>Your networks</h3><div class="feature-form"><label class="feature-grow">Saved network<select id="network-select"><option value="">No network selected</option></select></label><button id="network-refresh" type="button" class="feature-button feature-secondary">Refresh</button><a id="network-editor-link" class="feature-button" href="lab.html#builder">Open visual editor and test cases ↗</a></div><div id="network-summary" class="feature-meta"></div></article>
+                <p id="network-status" class="feature-status" role="status"></p>
+            </section>
+
+            <section id="scada-page-learning" class="hidden scada-surface feature-page">
+                <div class="feature-eyebrow">07 / GRAPH MEMORY</div>
+                <h2>Grid Memory</h2>
+                <p class="feature-copy">See what past incidents taught the grid. Rehearsal runs critical outages on a saved test network and records successful plans as playbooks.</p>
+                <div class="feature-grid"><article class="feature-card"><h3>Live-grid learning</h3><div id="learning-live-summary" class="feature-metrics">Loading memory…</div><div id="learning-incidents" class="feature-list"></div></article><article class="feature-card"><h3>Learned playbooks</h3><div id="learning-playbooks" class="feature-list">No playbooks loaded.</div></article></div>
+                <article class="feature-card"><h3>Rehearse a saved network</h3><form id="learning-rehearse-form" class="feature-form"><label class="feature-grow">Network<select id="learning-network-select" required><option value="">Select a saved network</option></select></label><label>Cases<input id="learning-cases" type="number" min="1" max="200" value="6"></label><button class="feature-button">Run rehearsal</button></form><p id="learning-status" class="feature-status" role="status"></p><div id="learning-network-summary" class="feature-metrics"></div><div id="learning-network-incidents" class="feature-list"></div></article>
+                <button id="learning-refresh" type="button" class="feature-button feature-secondary">Refresh memory</button>
+            </section>
         </div>
     </div>
 
-    <script src="assets/world.js?v=1c11c55f610b"></script><script src="assets/app.js?v=dc0a8cd161c8"></script>
+    <script src="assets/world.js?v=0644fe415880"></script><script src="assets/app.js?v=2a9c07ca44c2"></script><script src="assets/features.js?v=1eaa45fa9ba9"></script>
 </body>
 </html>

@@ -11,11 +11,12 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from backend.auth.router import OperatorSession, verify_operator_token
 
-from . import algorithms, networks, queries
+from . import algorithms, importers, networks, queries
 from .router import CircuitRef, _run
 
 networks_router = APIRouter(prefix="/api/networks", tags=["networks"])
@@ -60,6 +61,31 @@ def templates() -> Dict[str, Any]:
 @networks_router.get("/templates/{template_id}")
 def template(template_id: str) -> Dict[str, Any]:
     return _run(lambda: {"id": template_id, "spec": networks.get_template(template_id)})
+
+
+class ConvertBody(BaseModel):
+    format: str = Field("matpower", description="'matpower' (.m case file) or 'gridpulse' (spec JSON)")
+    content: str = Field(..., max_length=importers.MAX_CONTENT_BYTES)
+    name: Optional[str] = Field(None, max_length=80)
+    tier1_buses: Optional[List[int]] = Field(None, description="MATPOWER bus numbers to mark Tier-1; default picks ~5% of load buses")
+    battery_mw: float = Field(0.0, ge=0, le=10000, description="Add a battery of this size at each Tier-1 bus")
+
+
+@networks_router.get("/samples/{name}", response_class=PlainTextResponse)
+def sample(name: str) -> str:
+    """Bundled public MATPOWER files (ieee14, ieee30, ieee118) to try the importer."""
+    return _run(lambda: networks.sample_file(name))
+
+
+@networks_router.post("/convert")
+def convert(body: ConvertBody, session: OperatorSession = Depends(verify_operator_token)) -> Dict[str, Any]:
+    """Convert an uploaded file into a spec plus validation, without saving it."""
+    def run():
+        out = importers.convert(body.format, body.content, body.name,
+                                {"tier1_buses": body.tier1_buses, "battery_mw": body.battery_mw})
+        spec, warnings = networks.validate_spec(out["spec"])
+        return {**out, "spec": spec, "warnings": warnings}
+    return _run(run)
 
 
 @networks_router.post("/validate")
@@ -147,3 +173,25 @@ def islands(network_id: str, session: OperatorSession = Depends(verify_operator_
 @networks_router.get("/{network_id}/zones")
 def zones(network_id: str, session: OperatorSession = Depends(verify_operator_token)) -> Dict[str, Any]:
     return _run(lambda: algorithms.zones(networks.owned_client(session.operator_id, network_id)))
+
+
+
+class RehearseBody(BaseModel):
+    max_cases: int = Field(40, ge=1, le=200)
+
+
+@networks_router.post("/{network_id}/rehearse")
+def rehearse(network_id: str, body: RehearseBody, session: OperatorSession = Depends(verify_operator_token)) -> Dict[str, Any]:
+    """Train the network's memory by rehearsing its critical outages and demand surges."""
+    return _run(lambda: networks.rehearse(session.operator_id, network_id, body.max_cases))
+
+
+@networks_router.get("/{network_id}/memory")
+def network_memory(network_id: str, session: OperatorSession = Depends(verify_operator_token)) -> Dict[str, Any]:
+    """Learning curve and playbooks of a saved network."""
+    from . import memory
+
+    def run():
+        client = networks.owned_client(session.operator_id, network_id)
+        return {**memory.learning_curve(client), "playbooks": memory.list_playbooks(client)["playbooks"]}
+    return _run(run)

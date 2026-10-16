@@ -65,3 +65,40 @@ def test_islands_and_zones(graph):
     assert comps["components"][0]["size"] == 11
     z = zones(graph)
     assert sum(zone["size"] for zone in z["zones"]) == 11
+
+
+# --- learning ---------------------------------------------------------------
+
+def test_suggest_ranks_exact_then_similar_faults(graph):
+    record(graph, downstream=["SUB_METRO"], shed_mw=62.0)
+    exact = memory.suggest("TX_882", TRIP, client=graph)["suggestions"]
+    assert exact[0]["exact"] is True and exact[0]["similarity"] == 1.0 and exact[0]["plan"] == PLAN
+    near = memory.suggest("TX_884", [{"span_id": "TX_884", "circuit": "UPPER_PRIMARY"}], client=graph)["suggestions"]
+    assert near and near[0]["exact"] is False and near[0]["signature"] == "TRIP:TX_882:UPPER_PRIMARY"
+    assert near[0]["hops_away"] == 1 and near[0]["downstream_overlap"] == 1.0 and near[0]["score"] < exact[0]["score"]
+    assert memory.suggest("SUB_METRO", [], 1.2, client=graph)["suggestions"] == [] or \
+        all(sg["similarity"] < 1.0 for sg in memory.suggest("SUB_METRO", [], 1.2, client=graph)["suggestions"])
+
+
+def test_failures_lower_confidence_and_retire_playbooks(graph):
+    record(graph, downstream=["SUB_METRO"])
+    first = memory.suggest("TX_882", TRIP, client=graph)["suggestions"][0]["confidence"]
+    record(graph, status="FAILED", plan=None)
+    assert memory.suggest("TX_882", TRIP, client=graph)["suggestions"][0]["confidence"] < first
+    record(graph, status="FAILED", plan=None)
+    pb = memory.list_playbooks(graph)["playbooks"][0]
+    assert pb["retired"] is True
+    assert memory.suggest("TX_882", TRIP, client=graph)["suggestions"] == []
+
+
+def test_generalised_reuse_credits_the_source_playbook(graph):
+    record(graph, downstream=["SUB_METRO"])
+    out = record(graph, origin="TX_884", trips=[{"span_id": "TX_884", "circuit": "UPPER_PRIMARY"}],
+                 reused_playbook="TRIP:TX_882:UPPER_PRIMARY", downstream=["SUB_METRO"], steps=1, mitigation_ms=12.5)
+    assert out["reused_credit"]["success_count"] == 2
+    src = next(p for p in memory.list_playbooks(graph)["playbooks"] if p["signature"] == "TRIP:TX_882:UPPER_PRIMARY")
+    assert src["generalized"] == 1
+    curve = memory.learning_curve(graph)
+    assert curve["summary"]["solved_from_memory"] == 1 and curve["summary"]["generalized_reuses"] == 1
+    assert curve["incidents"][-1]["learned_from"] == "TRIP:TX_882:UPPER_PRIMARY" and curve["incidents"][-1]["steps"] == 1
+    assert graph.query("r", "MATCH (:Incident)-[:REUSED]->(p:Playbook) RETURN p.id AS id").rows[0]["id"] == "TRIP:TX_882:UPPER_PRIMARY"

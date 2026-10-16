@@ -18,7 +18,9 @@ operator = require_role(['operator', 'NERC_OPERATOR', 'SCADA_ADMIN'])
 @router.websocket('/ws/telemetry')
 async def telemetry(websocket: WebSocket):
     if websocket.query_params.get('token') not in SESSIONS:
-        await websocket.close(code=1008)
+        # Accept, then close with 1008 so browsers can tell "bad session" from a network drop.
+        await websocket.accept()
+        await websocket.close(code=1008, reason='login required')
         return
     manager = get_ws_manager()
     await manager.connect(websocket)
@@ -124,3 +126,25 @@ async def agent_advise(req: AdviseRequest, session=Depends(verify_operator_token
                     server.scada_dispatch_bess, bess_id, mw, operator_id=session.operator_id))
             sim._agent_log = f"Agent plan executed after graph approval: {advice['summary']}"
     return advice
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=3, max_length=500)
+    network_id: Optional[str] = Field(None, description="Ask about one of your saved networks instead of the live grid")
+
+
+@router.post('/api/mcp/ask')
+async def ask_the_grid(req: AskRequest, session=Depends(verify_operator_token)):
+    """Plain-English question -> one read-only Cypher query (guarded, GRAPH.RO_QUERY) -> rows + short answer."""
+    from backend.graph import GraphError, networks
+    from backend.graph.router import _STATUS
+    from backend.mcp import agent, ask
+    try:
+        client = networks.owned_client(session.operator_id, req.network_id) if req.network_id else None
+        return await asyncio.to_thread(ask.ask, req.question, client)
+    except agent.AgentUnavailable as exc:
+        raise HTTPException(503, {'code': 'AGENT_UNAVAILABLE', 'message': str(exc)}) from exc
+    except agent.AgentFailed as exc:
+        raise HTTPException(502, {'code': 'AGENT_FAILED', 'message': str(exc)}) from exc
+    except GraphError as exc:
+        raise HTTPException(_STATUS.get(type(exc), 500), exc.to_dict()) from exc

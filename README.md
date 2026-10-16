@@ -14,9 +14,15 @@ Users can also **build their own electricity networks** (each in its own FalkorD
 Start the app (see Quick start below), open **http://localhost:8000/lab.html** and sign in with the demo button (top right).
 
 1. **Live Ops.** Pick *AI operator* mode and click *Lightning TX_882*. Watch each step stream in: the memory recall, the blast-radius trace (with its Cypher), the mitigation search, the plan, the graph guard's verdict, then execution and verification.
-2. **Run Wildfire.** Graph memory recalls the TX_882 incident, which is 2 hops away. The **Memory** tab shows incidents, actions and learned playbooks. Re-run lightning and the proven playbook is reused once the guard re-approves it.
-3. **Network Builder.** Create from the *IEEE 118-bus* template, or edit the spec and save. It's stored in its own graph, `gridpulse_net_<id>`.
+2. **Run Wildfire (deterministic mode).** It's a different fault, but graph memory ranks the playbook learned at TX_882 as similar ("1 hop away, 100% shared downstream substations"). The guard re-approves it and it's reused in **1 decision step**. The **Memory** tab shows the learning curve, incidents, and playbooks with win/loss records; playbooks that keep failing retire themselves.
+   - **Ask the Grid:** type a question in plain English, e.g. "Which loads can be shed?" or "most critical buses". Groq writes one Cypher query, GridPulse blocks writes and runs it read-only, and you see the answer, the query, the rows and the graph highlighted.
+3. **Network Builder.** Two ways to get a grid in:
+   - **Draw one.** Place buses, substations and generators by clicking. Connect lines by clicking two nodes. Attach loads and batteries to substations. Edit properties in the side panel. Undo and live validation are built in.
+   - **Import a standard MATPOWER `.m` file,** or load a bundled IEEE 14/30/118 sample.
+
+   Saved networks keep their drawn layout, each in its own graph `gridpulse_net_<id>`.
 4. **Test Cases.** Run trips, demand surges and an N-1 scan, then click a row to highlight its overloads. Each case gets the smallest safe fix (battery first, then industrial shedding), or an honest *NOT_SAVEABLE*.
+   - **🎓 Rehearse** "trains" the network: it works through every critical outage and demand surge and stores what worked as playbooks in that network's graph. Run the cases again and they're solved from memory.
 5. **Analysis.** Try N-1 security, betweenness criticality, connected components (`algo.WCC`), zones (`algo.labelPropagation`), k-shortest reroutes (`algo.SPpaths`), and the blast-radius trace.
 6. **Audit.** *Verify chain* recomputes every record's hash and link.
 7. **Benchmark.** A measured FalkorDB vs SQLite multi-hop trace. Results are checked equal first, with honest numbers.
@@ -120,12 +126,24 @@ CALL algo.BFS(o, 6, 'LINE')   // benchmark
   - a projection within limits
 
   Execution then re-checks against current state, and every actuation writes an audit "intent" record before it changes anything.
+- **Graph as context layer.** Before the model's first turn, GridPulse runs the key FalkorDB queries and hands it a compact briefing, with each query's Cypher and evidence streamed as a step:
+  - memory recall, with learned plans ranked for this fault
+  - the blast-radius trace with the power-flow projection
+  - the mitigation assets available
+
+  Live on Groq's free tier, a lightning run takes 3 model turns, about 5k tokens and **about 4–7 s**. Rate-limit waits are bounded and shown as steps.
+- **Learning loop (Track 02).** Every run is stored as an `Incident`. Playbooks are ranked for new faults by similarity × confidence × cost:
+  - **Similarity:** exact trigger, fault kind, graph-hop distance, and shared downstream substations.
+  - **Confidence:** a Laplace-smoothed win rate.
+  - **Cost:** plans that shed less load rank higher.
+
+  Reuse is linked as `(:Incident)-[:REUSED]->(:Playbook)` and credits the source playbook. Playbooks that keep failing retire, and a learning curve is exposed.
 - **Fallback.** If the agent is unavailable or its plan is rejected, the deterministic pipeline takes over. That pipeline reuses a proven playbook when one exists, otherwise it runs a greedy battery-then-industrial plan.
 - **MCP.** The same SCADA tools are exposed as an **MCP stdio server** (`backend/mcp/transport.py`), so any MCP client is bound by the same rules.
 
 ## Validation and honest benchmarks
 
-- **Power flow vs pandapower.** On the public IEEE 118-bus case (186 branches), `dc-pf/1` matches pandapower `rundcpp` within **0.001 MW** on every branch. This runs in CI against a stored reference (`backend/graph/data/`).
+- **Power flow vs pandapower.** The public IEEE 14, 30 and 118-bus cases (247 branches in total) are imported through our own MATPOWER parser, and `dc-pf/1` matches pandapower `rundcpp` within **0.001 MW** on every branch. This runs in CI against stored references (`backend/graph/data/`).
 - **Graph vs SQL.** Every engine's results are checked equal before timing.
   - Local 6-hop traces take **well under 1 ms** for FalkorDB Cypher (0.03–0.04 ms) and for an indexed SQLite recursive CTE (0.04–0.06 ms), on grids from 1k to 100k buses.
   - The GraphBLAS `algo.BFS` wins on deep traversals of small graphs, but its cost grows with graph size.
@@ -140,7 +158,8 @@ cp .env.example .env            # add GROQ_API_KEY=... to enable the AI agent (f
 docker compose up --build       # FalkorDB + backend + UI on http://localhost:8000
 ```
 
-- **Lab (temporary UI for every feature):** http://localhost:8000/lab.html
+- **Console:** http://localhost:8000/ — live topology, diagnostics, agent, audit, Ask the Grid, Network Lab, and Grid Memory in one themed workspace. The topology supports animated current flow and full screen viewing.
+- **Advanced Lab:** http://localhost:8000/lab.html — visual network editor, test cases, analysis, benchmarking, and the deeper API tools. Open it from Network Lab to carry the active session across.
 - **Landing page:** http://localhost:8000
 - **Operator dashboard:** http://localhost:8000/login.html
 - **API docs:** http://localhost:8000/docs
@@ -217,9 +236,10 @@ Stop the Compose backend first (`docker compose stop backend`) before starting a
   - Requires `GROQ_API_KEY`; without it the endpoint returns 503 `AGENT_UNAVAILABLE`.
 - **Audit chain**: each audit record stores `seq`, `prev_hash`, `record_hash` and the graph `state_version` the action was based on. `GET /api/audit/verify` recomputes the chain and reports the first broken link. Older databases are migrated in place, and their pre-chain rows are reported as `legacy_unchained`.
 - **Event loop**: graph and SQLite work in scenario, reset and tool paths runs in worker threads while the simulator lock is held, so WebSocket telemetry keeps flowing during a run.
-- **Graph memory**: `GET /api/graph/memory/incidents`, `/memory/playbooks` and `/memory/recall?origin_id=` expose episodic and procedural memory. Every finished run is recorded; memory survives grid resets.
+- **Ask the grid**: `POST /api/mcp/ask {question, network_id?}` turns plain English into one guarded, read-only Cypher query (keyword guard plus `GRAPH.RO_QUERY`). It retries once on error and returns the answer, Cypher, rows, highlighted ids and an evidence hash.
+- **Graph memory**: `GET /api/graph/memory/incidents`, `/memory/playbooks`, `/memory/recall?origin_id=`, `/memory/suggest?origin_id=` and `/memory/learning` (the learning curve) expose episodic and procedural memory. Per network: `POST /api/networks/{id}/rehearse` and `GET /api/networks/{id}/memory`. Every finished run is recorded; memory survives grid resets.
 - **AI-operator mode**: `POST /api/sim/trigger-scenario/{1|2|3}?mode=agent` streams agent steps in telemetry (`agent_steps`), executes only guard-approved plans, and falls back to the deterministic pipeline.
-- **User-built networks**: `/api/networks` covers create, list, get, replace, delete, validate, templates and simulate, plus topology, trace, contingency, criticality, reroute, islands and zones per network. Networks are scoped to the logged-in operator.
+- **User-built networks**: `/api/networks` covers create, list, get, replace, delete, validate, templates, `convert` (MATPOWER `.m` or spec JSON to a preview spec), `samples/{ieee14,ieee30,ieee118}` and simulate, plus topology, trace, contingency, criticality, reroute, islands and zones per network. Networks are scoped to the logged-in operator.
 - **Tests and CI**: `.github/workflows/ci.yml` runs the full suite against a FalkorDB service container on every push and pull request. Coverage includes:
   - randomised safety properties over 16 seeded fault/demand/SOC combinations (`backend/mcp/test_random_safety.py`)
   - audit tamper detection
@@ -249,7 +269,7 @@ FALKORDB_PORT=6380 GRIDPULSE_REQUIRE_FALKORDB=1 .venv/bin/python -m pytest -q
 FALKORDB_PORT=6380 GRIDPULSE_REQUIRE_FALKORDB=1 .venv/bin/python -m pytest backend/graph/tests -q
 ```
 
-**125 passed, zero skipped** overall (re-verified in a fresh venv built only from the requirements files). The required graph suite: **71 passed, zero skipped**. Both report one upstream Starlette/httpx TestClient deprecation warning. The graph suite includes pure model tests as well as real Cypher tests. `backend/mcp/test_live_runtime.py` adds seven real-database app/runtime tests with isolated graph names and audit files; it does not substitute graph answers. Other app/SCADA fixture tests remain explicitly labelled as fixtures.
+**156 passed, zero skipped** overall (re-verified in a fresh venv built only from the requirements files, and from a fresh clone). The required graph suite: **86 passed, zero skipped**. Both report one upstream Starlette/httpx TestClient deprecation warning. The graph suite includes pure model tests as well as real Cypher tests. `backend/mcp/test_live_runtime.py` adds seven real-database app/runtime tests with isolated graph names and audit files; it does not substitute graph answers. Other app/SCADA fixture tests remain explicitly labelled as fixtures.
 
 Live database coverage includes repeated seeding, graph traversal, all three complete scenario pipelines, evidence hashes, Tier-1 protection, operator/read-only HTTP and WebSocket behavior, duplicate/conflicting triggers, reset cancellation, insufficient battery capacity, rejected hospital trips, repeatable battery setpoints and projected state synchronization. Partial confirmation and audit-write failures have additional fault-injection regression tests.
 

@@ -9,7 +9,7 @@ __pycache__/
 *.pyc
 .venv/
 
-data/
+/data/
 .pytest_cache/
 
 work/

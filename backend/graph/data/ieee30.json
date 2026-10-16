@@ -1,0 +1,647 @@
+{
+ "spec": {
+  "name": "IEEE 30-bus test system",
+  "description": "Public IEEE 30-bus case (via pandapower), imported with GridPulse's MATPOWER importer. Ratings, priority tiers and batteries are synthetic overlays.",
+  "generators": [
+   {
+    "id": "GEN_000_B001",
+    "name": "Slack",
+    "output_mw": 0.0,
+    "capacity_mw": null,
+    "connects_to": "B001"
+   },
+   {
+    "id": "GEN_B002",
+    "output_mw": 60.97,
+    "capacity_mw": 80.0,
+    "connects_to": "B002"
+   },
+   {
+    "id": "GEN_B013",
+    "output_mw": 37.0,
+    "capacity_mw": 40.0,
+    "connects_to": "B013"
+   },
+   {
+    "id": "GEN_B022",
+    "output_mw": 21.59,
+    "capacity_mw": 50.0,
+    "connects_to": "B022"
+   },
+   {
+    "id": "GEN_B023",
+    "output_mw": 19.2,
+    "capacity_mw": 30.0,
+    "connects_to": "B023"
+   },
+   {
+    "id": "GEN_B027",
+    "output_mw": 26.91,
+    "capacity_mw": 55.0,
+    "connects_to": "B027"
+   }
+  ],
+  "buses": [
+   {
+    "id": "B001"
+   },
+   {
+    "id": "B005"
+   },
+   {
+    "id": "B006"
+   },
+   {
+    "id": "B009"
+   },
+   {
+    "id": "B011"
+   },
+   {
+    "id": "B013"
+   },
+   {
+    "id": "B022"
+   },
+   {
+    "id": "B025"
+   },
+   {
+    "id": "B027"
+   },
+   {
+    "id": "B028"
+   }
+  ],
+  "substations": [
+   {
+    "id": "B002",
+    "capacity_mw": 40.0
+   },
+   {
+    "id": "B003",
+    "capacity_mw": 10.0
+   },
+   {
+    "id": "B004",
+    "capacity_mw": 20.0
+   },
+   {
+    "id": "B007",
+    "capacity_mw": 40.0
+   },
+   {
+    "id": "B008",
+    "capacity_mw": 50.0
+   },
+   {
+    "id": "B010",
+    "capacity_mw": 10.0
+   },
+   {
+    "id": "B012",
+    "capacity_mw": 20.0
+   },
+   {
+    "id": "B014",
+    "capacity_mw": 10.0
+   },
+   {
+    "id": "B015",
+    "capacity_mw": 20.0
+   },
+   {
+    "id": "B016",
+    "capacity_mw": 10.0
+   },
+   {
+    "id": "B017",
+    "capacity_mw": 20.0
+   },
+   {
+    "id": "B018",
+    "capacity_mw": 10.0
+   },
+   {
+    "id": "B019",
+    "capacity_mw": 20.0
+   },
+   {
+    "id": "B020",
+    "capacity_mw": 10.0
+   },
+   {
+    "id": "B021",
+    "capacity_mw": 30.0
+   },
+   {
+    "id": "B023",
+    "capacity_mw": 10.0
+   },
+   {
+    "id": "B024",
+    "capacity_mw": 20.0
+   },
+   {
+    "id": "B026",
+    "capacity_mw": 10.0
+   },
+   {
+    "id": "B029",
+    "capacity_mw": 10.0
+   },
+   {
+    "id": "B030",
+    "capacity_mw": 20.0
+   }
+  ],
+  "lines": [
+   {
+    "id": "BR001",
+    "from": "B001",
+    "to": "B002",
+    "impedance_pu": 0.06,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR002",
+    "from": "B001",
+    "to": "B003",
+    "impedance_pu": 0.19,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR003",
+    "from": "B002",
+    "to": "B004",
+    "impedance_pu": 0.17,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR004",
+    "from": "B003",
+    "to": "B004",
+    "impedance_pu": 0.04,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR005",
+    "from": "B002",
+    "to": "B005",
+    "impedance_pu": 0.2,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR006",
+    "from": "B002",
+    "to": "B006",
+    "impedance_pu": 0.18,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR007",
+    "from": "B004",
+    "to": "B006",
+    "impedance_pu": 0.04,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR008",
+    "from": "B005",
+    "to": "B007",
+    "impedance_pu": 0.12,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR009",
+    "from": "B006",
+    "to": "B007",
+    "impedance_pu": 0.08,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR010",
+    "from": "B006",
+    "to": "B008",
+    "impedance_pu": 0.04,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR011",
+    "from": "B006",
+    "to": "B009",
+    "impedance_pu": 0.21,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR012",
+    "from": "B006",
+    "to": "B010",
+    "impedance_pu": 0.56,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR013",
+    "from": "B009",
+    "to": "B011",
+    "impedance_pu": 0.21,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR014",
+    "from": "B009",
+    "to": "B010",
+    "impedance_pu": 0.11,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR015",
+    "from": "B004",
+    "to": "B012",
+    "impedance_pu": 0.26,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR016",
+    "from": "B012",
+    "to": "B013",
+    "impedance_pu": 0.14,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR017",
+    "from": "B012",
+    "to": "B014",
+    "impedance_pu": 0.26,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR018",
+    "from": "B012",
+    "to": "B015",
+    "impedance_pu": 0.13,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR019",
+    "from": "B012",
+    "to": "B016",
+    "impedance_pu": 0.2,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR020",
+    "from": "B014",
+    "to": "B015",
+    "impedance_pu": 0.2,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR021",
+    "from": "B016",
+    "to": "B017",
+    "impedance_pu": 0.19,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR022",
+    "from": "B015",
+    "to": "B018",
+    "impedance_pu": 0.22,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR023",
+    "from": "B018",
+    "to": "B019",
+    "impedance_pu": 0.13,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR024",
+    "from": "B019",
+    "to": "B020",
+    "impedance_pu": 0.07,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR025",
+    "from": "B010",
+    "to": "B020",
+    "impedance_pu": 0.21,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR026",
+    "from": "B010",
+    "to": "B017",
+    "impedance_pu": 0.08,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR027",
+    "from": "B010",
+    "to": "B021",
+    "impedance_pu": 0.07,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR028",
+    "from": "B010",
+    "to": "B022",
+    "impedance_pu": 0.15,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR029",
+    "from": "B021",
+    "to": "B022",
+    "impedance_pu": 0.02,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR030",
+    "from": "B015",
+    "to": "B023",
+    "impedance_pu": 0.2,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR031",
+    "from": "B022",
+    "to": "B024",
+    "impedance_pu": 0.18,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR032",
+    "from": "B023",
+    "to": "B024",
+    "impedance_pu": 0.27,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR033",
+    "from": "B024",
+    "to": "B025",
+    "impedance_pu": 0.33,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR034",
+    "from": "B025",
+    "to": "B026",
+    "impedance_pu": 0.38,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR035",
+    "from": "B025",
+    "to": "B027",
+    "impedance_pu": 0.21,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR036",
+    "from": "B028",
+    "to": "B027",
+    "impedance_pu": 0.4,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR037",
+    "from": "B027",
+    "to": "B029",
+    "impedance_pu": 0.42,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR038",
+    "from": "B027",
+    "to": "B030",
+    "impedance_pu": 0.6,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR039",
+    "from": "B029",
+    "to": "B030",
+    "impedance_pu": 0.45,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR040",
+    "from": "B008",
+    "to": "B028",
+    "impedance_pu": 0.2,
+    "limit_mw": 100.0
+   },
+   {
+    "id": "BR041",
+    "from": "B006",
+    "to": "B028",
+    "impedance_pu": 0.06,
+    "limit_mw": 100.0
+   }
+  ],
+  "loads": [
+   {
+    "id": "LOAD_B002",
+    "substation": "B002",
+    "mw_demand": 21.7,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B003",
+    "substation": "B003",
+    "mw_demand": 2.4,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B004",
+    "substation": "B004",
+    "mw_demand": 7.6,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B007",
+    "substation": "B007",
+    "mw_demand": 22.8,
+    "priority_tier": 3,
+    "category": "INDUSTRIAL"
+   },
+   {
+    "id": "LOAD_B008",
+    "substation": "B008",
+    "mw_demand": 30.0,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B010",
+    "substation": "B010",
+    "mw_demand": 5.8,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B012",
+    "substation": "B012",
+    "mw_demand": 11.2,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B014",
+    "substation": "B014",
+    "mw_demand": 6.2,
+    "priority_tier": 3,
+    "category": "INDUSTRIAL"
+   },
+   {
+    "id": "LOAD_B015",
+    "substation": "B015",
+    "mw_demand": 8.2,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B016",
+    "substation": "B016",
+    "mw_demand": 3.5,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B017",
+    "substation": "B017",
+    "mw_demand": 9.0,
+    "priority_tier": 1,
+    "category": "HOSPITAL"
+   },
+   {
+    "id": "LOAD_B018",
+    "substation": "B018",
+    "mw_demand": 3.2,
+    "priority_tier": 3,
+    "category": "INDUSTRIAL"
+   },
+   {
+    "id": "LOAD_B019",
+    "substation": "B019",
+    "mw_demand": 9.5,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B020",
+    "substation": "B020",
+    "mw_demand": 2.2,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B021",
+    "substation": "B021",
+    "mw_demand": 17.5,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B023",
+    "substation": "B023",
+    "mw_demand": 3.2,
+    "priority_tier": 3,
+    "category": "INDUSTRIAL"
+   },
+   {
+    "id": "LOAD_B024",
+    "substation": "B024",
+    "mw_demand": 8.7,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B026",
+    "substation": "B026",
+    "mw_demand": 3.5,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B029",
+    "substation": "B029",
+    "mw_demand": 2.4,
+    "priority_tier": 2,
+    "category": "RESIDENTIAL"
+   },
+   {
+    "id": "LOAD_B030",
+    "substation": "B030",
+    "mw_demand": 10.6,
+    "priority_tier": 3,
+    "category": "INDUSTRIAL"
+   }
+  ],
+  "batteries": [
+   {
+    "id": "BESS_B017",
+    "substation": "B017",
+    "max_discharge_mw": 30.0,
+    "soc_pct": 80.0
+   }
+  ]
+ },
+ "notes": [
+  "41 of 41 branches had no rating (rateA=0): rated at 1.6 x base-case flow, min 100 MW",
+  "priority tiers are synthetic: 1 Tier-1 (hospital) bus(es), every 4th load Tier-3",
+  "added a 30 MW battery at each Tier-1 bus"
+ ],
+ "reference_flows_mw": {
+  "BR001": 9.1695,
+  "BR002": 14.3605,
+  "BR003": 15.628,
+  "BR004": 11.9605,
+  "BR005": 13.3277,
+  "BR006": 19.4838,
+  "BR007": 21.2582,
+  "BR008": 13.3277,
+  "BR009": 9.4723,
+  "BR010": 24.7456,
+  "BR011": 4.7994,
+  "BR012": 2.7425,
+  "BR013": -0.0,
+  "BR014": 4.7994,
+  "BR015": -1.2698,
+  "BR016": -37.0,
+  "BR017": 5.4527,
+  "BR018": 9.7557,
+  "BR019": 9.3218,
+  "BR020": -0.7473,
+  "BR021": 5.8218,
+  "BR022": 9.3365,
+  "BR023": 6.1365,
+  "BR024": -3.3635,
+  "BR025": 5.5635,
+  "BR026": 3.1782,
+  "BR027": -2.9165,
+  "BR028": -4.0832,
+  "BR029": -20.4165,
+  "BR030": -8.5281,
+  "BR031": -2.9098,
+  "BR032": 7.4719,
+  "BR033": -4.1379,
+  "BR034": 3.5,
+  "BR035": -7.6379,
+  "BR036": -6.2721,
+  "BR037": 6.0408,
+  "BR038": 6.9592,
+  "BR039": 3.6408,
+  "BR040": -5.2544,
+  "BR041": -1.0177
+ },
+ "source": "pandapower 3.5.6 case30, rundcpp"
+}
