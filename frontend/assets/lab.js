@@ -264,6 +264,12 @@
     const expanded = document.fullscreenElement === builderWorkspace || builderFallbackFullscreen;
     $('edFullscreen').textContent = expanded ? '↙ Exit full screen' : '⛶ Full screen';
     $('edFullscreen').setAttribute('aria-pressed', String(expanded));
+    if (!expanded) {
+      builderWorkspace.classList.remove('builder-fullscreen-returning');
+      void builderWorkspace.offsetWidth;
+      builderWorkspace.classList.add('builder-fullscreen-returning');
+      setTimeout(() => builderWorkspace.classList.remove('builder-fullscreen-returning'), 300);
+    }
     requestAnimationFrame(() => { editor.resize(); requestAnimationFrame(() => editor.resize()); });
   }
   $('edFullscreen').onclick = async () => {

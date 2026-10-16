@@ -56,10 +56,12 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
 #edProps .property-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;margin:10px 0}#edProps .property-grid label{display:flex;flex-direction:column;gap:4px;margin:0;color:var(--muted);font-size:12px}#edProps .property-grid input,#edProps .property-grid select{width:100%;min-height:34px}#edProps details{padding:8px 0;border-top:1px solid var(--line)}#edProps summary{color:var(--cyan)}
 #builder:fullscreen{width:100vw;height:100dvh;overflow:auto;background:#040814;padding:18px 24px}#builder:fullscreen #cyNet,#builder.builder-fullscreen-fallback #cyNet{height:calc(100dvh - 260px);min-height:320px}
 #builder:fullscreen,#builder.builder-fullscreen-fallback{animation:builderExpand .35s cubic-bezier(.2,.8,.2,1) both}#builder.builder-fullscreen-fallback{position:fixed;inset:0;z-index:20;width:100vw;height:100dvh;overflow:auto;background:#040814;padding:18px 24px}body.builder-fullscreen-active{overflow:hidden}
+#builder:fullscreen .builder-workspace,#builder.builder-fullscreen-fallback .builder-workspace{animation:builderCanvasIn .5s cubic-bezier(.2,.8,.2,1) both}#builder.builder-fullscreen-returning .builder-workspace{animation:builderCanvasReturn .28s ease-out}
 @keyframes builderExpand{from{opacity:.7;transform:scale(.985)}to{opacity:1;transform:scale(1)}}
+@keyframes builderCanvasIn{from{opacity:.65;transform:translateY(10px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes builderCanvasReturn{from{opacity:.75;transform:scale(1.01)}to{opacity:1;transform:scale(1)}}
 @media(max-width:900px){.builder-details{grid-template-columns:1fr}.builder-tool-group+.builder-tool-group{border-left:0;padding-left:0}#cyNet{min-height:390px}}@media(max-width:600px){#builder .builder-workspace{padding:12px}.builder-head h2{font-size:16px}#edProps .property-grid{grid-template-columns:1fr}#cyNet{min-height:350px}#builder:fullscreen,#builder.builder-fullscreen-fallback{padding:10px}}
 @media(max-width:600px){header{gap:6px;padding:8px}header nav{order:3;width:100%;flex-wrap:nowrap;overflow-x:auto}header nav button{white-space:nowrap}#auth{order:2;margin-left:0;width:100%;justify-content:flex-start;flex-wrap:wrap}#who{font-size:10px}section{scroll-margin-top:155px}}
-@media(prefers-reduced-motion:reduce){#builder:fullscreen,#builder.builder-fullscreen-fallback{animation:none}#cyNet{transition:none}}
+@media(prefers-reduced-motion:reduce){#builder:fullscreen,#builder.builder-fullscreen-fallback,#builder:fullscreen .builder-workspace,#builder.builder-fullscreen-fallback .builder-workspace,#builder.builder-fullscreen-returning .builder-workspace{animation:none}#cyNet{transition:none}}
 </style>
 </head>
 <body>
@@ -235,6 +237,6 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
 </main>
 <div id="toast"></div>
 <script src="assets/lab-editor.js?v=1695fc385537"></script>
-<script src="assets/lab.js?v=f3abf6f74367"></script>
+<script src="assets/lab.js?v=ed29d1a4a0fb"></script>
 </body>
 </html>

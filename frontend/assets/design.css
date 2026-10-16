@@ -101,13 +101,13 @@
             line-height: 0.92;
         }
         .app-view {
-            transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), filter 0.55s ease;
+            transition: opacity 0.62s cubic-bezier(0.22, 1, 0.36, 1), transform 0.62s cubic-bezier(0.22, 1, 0.36, 1), filter 0.62s ease;
         }
         .app-view.view-hidden {
             opacity: 0;
             pointer-events: none;
-            transform: scale(0.985) translateY(10px);
-            filter: blur(8px);
+            transform: scale(0.99) translateY(14px);
+            filter: blur(3px);
         }
         .app-view.view-active {
             opacity: 1;
@@ -166,6 +166,26 @@ html:not(.dark) .feature-page h2,html:not(.dark) .feature-card h3{color:#0f172a}
 @media(max-width:820px){.feature-grid{grid-template-columns:1fr}.feature-page{padding:17px}.feature-form label{flex:1 1 100%}}
 #scada-topology-view:fullscreen,#scada-topology-view.topology-expanded{animation:topologyExpand .42s cubic-bezier(.2,.8,.2,1) both}
 #scada-topology-view.topology-returning{animation:topologyReturn .32s ease-out}
+#scada-topology-view:fullscreen canvas,#scada-topology-view.topology-expanded canvas{animation:topologyCanvasIn .58s cubic-bezier(.2,.8,.2,1) both}
+#scada-topology-view.topology-returning canvas{animation:topologyCanvasOut .32s ease-out}
 @keyframes topologyExpand{from{opacity:.6;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
 @keyframes topologyReturn{from{opacity:.7;transform:scale(1.015)}to{opacity:1;transform:scale(1)}}
-@media(prefers-reduced-motion:reduce){#scada-topology-view:fullscreen,#scada-topology-view.topology-expanded,#scada-topology-view.topology-returning{animation:none}.scada-nav-link,.feature-button{transition:none}}
+@keyframes topologyCanvasIn{from{opacity:.55;transform:scale(.975)}to{opacity:1;transform:scale(1)}}
+@keyframes topologyCanvasOut{from{opacity:.8;transform:scale(1.01)}to{opacity:1;transform:scale(1)}}
+#view-gateway.view-active .gateway-hero{animation:gatewayArrive .64s cubic-bezier(.2,.8,.2,1) .06s both}
+#view-gateway.view-active .gateway-auth-card{animation:gatewayArrive .68s cubic-bezier(.2,.8,.2,1) .12s both}
+#view-console.view-active>header{animation:gatewayArrive .45s cubic-bezier(.2,.8,.2,1) both}
+#view-console.view-active .console-main{animation:gatewayArrive .58s cubic-bezier(.2,.8,.2,1) .09s both}
+@keyframes gatewayArrive{from{opacity:0;transform:translateY(18px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+#gateway-message{min-height:18px}
+.gateway-auth-card.is-authenticating{border-color:rgba(56,189,248,.68);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(56,189,248,.16),0 0 26px rgba(14,165,233,.16)}
+.gateway-auth-card.is-authenticating #gateway-message{color:#7dd3fc}
+.gateway-auth-card.is-authenticating #gateway-message::before{content:"";display:inline-block;width:11px;height:11px;margin-right:9px;border:2px solid rgba(125,211,252,.35);border-top-color:#38bdf8;border-radius:50%;vertical-align:-2px;animation:authSpin .75s linear infinite}
+.gateway-auth-card.is-auth-success{animation:authSuccess .32s ease-out both;border-color:rgba(52,211,153,.72)}
+.gateway-auth-card.is-auth-success #gateway-message{color:#34d399}
+.gateway-auth-card.is-auth-error{animation:authError .3s ease-out}
+.gateway-auth-card button:disabled{opacity:.62;cursor:wait}
+@keyframes authSpin{to{transform:rotate(360deg)}}
+@keyframes authSuccess{50%{transform:scale(1.012)}to{transform:scale(1)}}
+@keyframes authError{20%,60%{transform:translateX(-3px)}40%,80%{transform:translateX(3px)}to{transform:translateX(0)}}
+@media(prefers-reduced-motion:reduce){.app-view{transition:none}.app-view.view-hidden{transform:none;filter:none}#view-gateway.view-active .gateway-hero,#view-gateway.view-active .gateway-auth-card,#view-console.view-active>header,#view-console.view-active .console-main,.gateway-auth-card.is-authenticating #gateway-message::before,.gateway-auth-card.is-auth-success,.gateway-auth-card.is-auth-error,#scada-topology-view:fullscreen,#scada-topology-view.topology-expanded,#scada-topology-view.topology-returning,#scada-topology-view:fullscreen canvas,#scada-topology-view.topology-expanded canvas,#scada-topology-view.topology-returning canvas{animation:none}.scada-nav-link,.feature-button{transition:none}}

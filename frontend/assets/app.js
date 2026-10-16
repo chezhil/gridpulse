@@ -21,13 +21,33 @@
   }
   function connection(text) { say('connection-status',text); say('backend-connection-pill',text); controls(); }
   async function guarded(fn) { try { say('action-message',''); return await fn(); } catch(e) { say('action-message',e.message); } }
+  let loginInFlight = false;
   async function login(body) {
-    say('gateway-message','Connecting…');
+    if (loginInFlight) return;
+    loginInFlight = true;
+    const card = $('gateway-auth-card');
+    const actions = [...card.querySelectorAll('button[type="submit"], button[onclick^="loginWithRole"]')];
+    actions.forEach(button => { button.disabled = true; });
+    card.classList.remove('is-auth-error','is-auth-success');
+    card.classList.add('is-authenticating');
+    say('gateway-message','Authenticating operator…');
     try {
       session = await api('/api/auth/login',{method:'POST',body:JSON.stringify(body)});
       sessionStorage.setItem('gridpulse_live_session',JSON.stringify(session));
-      say('gateway-message',''); await enter();
-    } catch(e) { say('gateway-message',e.message); }
+      card.classList.remove('is-authenticating');
+      card.classList.add('is-auth-success');
+      say('gateway-message','Access granted ✓');
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) await new Promise(resolve => setTimeout(resolve,220));
+      await enter();
+    } catch(e) {
+      card.classList.remove('is-authenticating','is-auth-success');
+      card.classList.add('is-auth-error');
+      say('gateway-message',e.message);
+    } finally {
+      loginInFlight = false;
+      actions.forEach(button => { button.disabled = false; });
+      setTimeout(() => card.classList.remove('is-auth-error','is-auth-success'),500);
+    }
   }
   window.handleGatewaySubmit = e => { e.preventDefault(); return login({username:$('login-email-input').value,password:$('login-pass-input').value,role:'operator',demo:false}); };
   window.loginWithRole = (username,role) => login({username,role:roles[role] || role,demo:true});

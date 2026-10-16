@@ -13,7 +13,7 @@
 
 
 
-    <link rel="stylesheet" href="assets/design.css?v=08bc2a14eb02">
+    <link rel="stylesheet" href="assets/design.css?v=aa6811d2c582">
 </head>
 <body class="text-slate-100 antialiased selection:bg-sky-500 selection:text-white">
 
@@ -350,7 +350,7 @@ RETURN path, sub.capacity_mw;</pre>
 
         <div class="max-w-6xl w-full mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-10 items-center my-auto">
             <!-- Left Hero Column -->
-            <div class="lg:col-span-6 space-y-6">
+            <div class="gateway-hero lg:col-span-6 space-y-6">
                 <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-mono text-[11px] uppercase tracking-widest">
                     <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                     <span>AUTONOMOUS GRID INTERCEPTOR</span>
@@ -381,7 +381,7 @@ RETURN path, sub.capacity_mw;</pre>
 
             <!-- Right Operator Control Plane Card -->
             <div class="lg:col-span-6 flex justify-center lg:justify-end">
-                <div class="scada-surface rounded-3xl p-7 sm:p-8 w-full max-w-md space-y-5">
+                <div id="gateway-auth-card" class="gateway-auth-card scada-surface rounded-3xl p-7 sm:p-8 w-full max-w-md space-y-5">
                     <div>
                         <div class="text-[10px] font-mono uppercase tracking-[0.2em] text-sky-500 dark:text-sky-400">01 / OPERATOR AUTHENTICATION</div>
                         <h2 class="font-display font-bold text-2xl text-slate-900 dark:text-white mt-1">Operator Control Plane</h2>
@@ -397,7 +397,7 @@ RETURN path, sub.capacity_mw;</pre>
                             <label class="block text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">SCADA ACCESS TOKEN / PASSWORD</label>
                             <input id="login-pass-input" type="password"  class="scada-input w-full rounded-xl px-3.5 py-2.5 text-xs font-mono focus:outline-none focus:border-sky-400">
                         </div>
-                        <button type="submit" class="w-full py-3 rounded-xl bg-sky-400 hover:bg-sky-300 text-slate-950 font-mono text-xs font-bold tracking-wide transition shadow-lg shadow-sky-500/20">
+                        <button id="gateway-submit-button" type="submit" class="w-full py-3 rounded-xl bg-sky-400 hover:bg-sky-300 text-slate-950 font-mono text-xs font-bold tracking-wide transition shadow-lg shadow-sky-500/20">
                             Authenticate &amp; enter console →
                         </button>
                     </form>
@@ -523,7 +523,7 @@ RETURN path, sub.capacity_mw;</pre>
         </div>
 
         <!-- Console Main Content -->
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        <div class="console-main max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
             <div id="connection-status" role="status" class="font-mono text-sm text-sky-500">Sign in to connect to backend telemetry.</div><div id="action-message" role="status" class="text-sm text-rose-400"></div><!-- KPI Ribbon -->
             <div class="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
                 <div class="scada-surface rounded-2xl p-4">
@@ -653,6 +653,6 @@ RETURN path, sub.capacity_mw;</pre>
         </div>
     </div>
 
-    <script src="assets/world.js?v=0644fe415880"></script><script src="assets/app.js?v=2a9c07ca44c2"></script><script src="assets/features.js?v=1eaa45fa9ba9"></script>
+    <script src="assets/world.js?v=675f22aa61c4"></script><script src="assets/app.js?v=8410086b7d0c"></script><script src="assets/features.js?v=1eaa45fa9ba9"></script>
 </body>
 </html>

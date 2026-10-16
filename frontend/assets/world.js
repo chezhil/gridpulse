@@ -1474,6 +1474,7 @@
         let consoleMitigated = false;
 
         function setAppView(viewName) {
+            if (viewName === activeAppView) return;
             activeAppView = viewName;
             const views = {
                 landing: document.getElementById('view-landing'),
