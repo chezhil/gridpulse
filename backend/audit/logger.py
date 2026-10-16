@@ -61,6 +61,8 @@ class AuditLogger:
     def _ensure_db(self):
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.db_path) as conn:
+            # WAL lets the audit page read while an actuation is being written.
+            conn.execute("PRAGMA journal_mode=WAL")
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS audit_events (
@@ -100,7 +102,7 @@ class AuditLogger:
         """Deterministically hash the evidence payload (Cypher query, parameters, result IDs)."""
         if not evidence_data:
             return hashlib.sha256(b"NO_EVIDENCE_SUPPLIED").hexdigest()
-        canonical_json = json.dumps(evidence_data, sort_keys=True, separators=(",", ":"))
+        canonical_json = json.dumps(evidence_data, sort_keys=True, separators=(",", ":"), default=str)
         return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
     def log_event(
@@ -123,8 +125,9 @@ class AuditLogger:
         ts = timestamp or datetime.now(timezone.utc).isoformat()
         computed_hash = evidence_hash or self.calculate_evidence_hash(evidence)
 
-        ev_json = json.dumps(evidence) if evidence is not None else None
-        req_json = json.dumps(requested_action) if requested_action is not None else None
+        # default=str matches the hash above, so an odd value can't fail the record after state already changed.
+        ev_json = json.dumps(evidence, default=str) if evidence is not None else None
+        req_json = json.dumps(requested_action, default=str) if requested_action is not None else None
 
         record = {
             "id": event_id, "timestamp": ts, "run_id": run_id, "scenario_id": scenario_id, "target": target,
