@@ -150,3 +150,4 @@
         }
 
 .integration-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end}.integration-controls label{display:flex;flex-direction:column;gap:6px;font-size:12px}.integration-controls input{background:transparent;border:1px solid #64748b;border-radius:8px;padding:8px;color:inherit;max-width:100%}.integration-controls button{background:#0369a1;color:white;padding:9px 14px;border-radius:10px}.integration-result{white-space:pre-wrap;overflow-wrap:anywhere;max-height:350px;overflow:auto;font-size:12px}button:disabled{opacity:.4;cursor:not-allowed}#console-mcp-log{white-space:pre-wrap}#view-console{overflow-x:hidden}#connection-status{overflow-wrap:anywhere} @media(max-width:640px){#view-console header{gap:4px;padding:8px;height:auto;flex-wrap:wrap}.kinetic-stat{font-size:22px}.integration-controls label{width:100%}}
+#scada-topology-canvas{min-width:800px}

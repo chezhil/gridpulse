@@ -1538,7 +1538,7 @@
             if (!scadaCanvas || !scadaCanvas.parentElement) return;
             const rect = scadaCanvas.parentElement.getBoundingClientRect();
             const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            scadaCanvas.width = Math.max(300, rect.width * dpr);
+            scadaCanvas.width = Math.max(800, rect.width) * dpr;
             scadaCanvas.height = Math.max(200, rect.height * dpr);
         }
         window.addEventListener('resize', resizeScadaTopologyCanvas);
