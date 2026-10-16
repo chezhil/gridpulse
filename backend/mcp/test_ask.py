@@ -66,3 +66,14 @@ def test_unanswerable_question(live_runtime):  # noqa: F811
     graph.init_graph(reset=True)
     r = ask.ask("What is the weather tomorrow?", llm=FakeLLM([q("", "The graph has no weather data.")]))
     assert r["answerable"] is False and "weather" in r["explanation"]
+
+
+def test_websocket_rejects_bad_session_with_policy_code(live_runtime):  # noqa: F811
+    from fastapi.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+    from backend.main import app
+    with TestClient(app) as c:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with c.websocket_connect('/ws/telemetry?token=stale') as ws:
+                ws.receive_json()
+        assert exc.value.code == 1008

@@ -18,7 +18,9 @@ operator = require_role(['operator', 'NERC_OPERATOR', 'SCADA_ADMIN'])
 @router.websocket('/ws/telemetry')
 async def telemetry(websocket: WebSocket):
     if websocket.query_params.get('token') not in SESSIONS:
-        await websocket.close(code=1008)
+        # Accept, then close with 1008 so browsers can tell "bad session" from a network drop.
+        await websocket.accept()
+        await websocket.close(code=1008, reason='login required')
         return
     manager = get_ws_manager()
     await manager.connect(websocket)
