@@ -16,6 +16,7 @@ Modes:
 Every finished run is written to graph memory as an Incident.
 """
 import asyncio
+import time
 from datetime import datetime, timezone
 
 from backend import graph
@@ -28,6 +29,11 @@ QUESTIONS = {
     2: 'Wildfire smoke has tripped the primary circuit of span TX_884 (T5->T6). Investigate and propose a mitigation.',
     3: 'A 5 PM heatwave has raised every metro load by 20%. Investigate and propose a mitigation.',
 }
+
+
+def _same_plan(a, b):
+    norm = lambda p: (sorted(p.get('trip_breakers') or []), {k: round(float(v), 1) for k, v in sorted((p.get('bess_dispatch') or {}).items())})
+    return norm(a) == norm(b)
 
 
 def _step(entry):
@@ -55,7 +61,7 @@ class GridPulseInterceptor:
                  if s[f] in ('FAULT_TRIPPED', 'DE_ENERGIZED', 'TRIPPED')]
         self._ctx[run_id] = {'origin': ORIGINS[scenario_id], 'trips': trips,
                              'demand_scale': 1.2 if scenario_id == 3 else None, 'source': 'INTERCEPTOR',
-                             'scenario': sim._scenario_name}
+                             'scenario': sim._scenario_name, 't0': time.perf_counter(), 'steps': 0}
 
     def _analyze(self, run_id, scenario_id):
         ctx = self._ctx[run_id]
@@ -69,13 +75,16 @@ class GridPulseInterceptor:
         sim._graphblas_latency_ms = trace['timing']['graph_server_ms']
         sim.record('CASCADE_TRACE', origin, 'Current-state dc-pf/1 projection', evidence=trace)
         ctx.update(overloads=[o['element'] for o in trace['projection']['overloads']],
-                   relief=trace['summary']['required_relief_mw'], state_version=trace.get('state_version'))
+                   relief=trace['summary']['required_relief_mw'], state_version=trace.get('state_version'),
+                   downstream=trace['summary'].get('downstream_substations') or [])
         try:
             recall = graph.memory.recall(origin)
-            sim._memory = {'incidents': recall['incidents'][:5], 'playbooks': recall['playbooks'][:3]}
-            ctx['playbooks'] = recall['playbooks']
+            learned = graph.memory.suggest(origin, ctx['trips'], ctx['demand_scale'])
+            sim._memory = {'incidents': recall['incidents'][:5], 'playbooks': recall['playbooks'][:3],
+                           'suggestions': learned['suggestions']}
+            ctx['suggestions'] = learned['suggestions']
         except graph.GraphError:
-            ctx['playbooks'] = []
+            ctx['suggestions'] = []
         if not trace['projection'].get('relief_feasible', True):
             raise ValueError('No substation demand reduction can relieve the projected overload')
         required = trace['summary']['required_relief_mw']
@@ -83,15 +92,14 @@ class GridPulseInterceptor:
         return required, assets
 
     def _playbook_plan(self, run_id):
-        """A remembered plan for this trigger, if it worked before and the guard still approves it now."""
+        """The best remembered plan (same or similar fault) that the guard approves against the current state."""
         ctx = self._ctx[run_id]
-        signature = graph.memory.signature_for(ctx['trips'], ctx['demand_scale'])
-        for pb in ctx.get('playbooks') or []:
-            if pb['signature'] != signature or not pb.get('plan') or pb['success_count'] <= pb['failure_count']:
-                continue
-            verdict = graph.evaluate_plan(pb['plan'])
+        for suggestion in ctx.get('suggestions') or []:
+            ctx['steps'] += 1
+            verdict = graph.evaluate_plan(suggestion['plan'])
             if verdict['verdict'] == 'APPROVED':
-                return pb['plan']
+                ctx['reused'] = suggestion
+                return suggestion['plan']
         return None
 
     @staticmethod
@@ -142,14 +150,20 @@ class GridPulseInterceptor:
             return
         breakers = {c['breaker_id']: c['id'] for c in sim._consumers.values()}
         try:
+            plan = ctx.get('plan') or {}
+            shed = sum(c['mw_demand'] for c in sim._consumers.values() if c['breaker_id'] in (plan.get('trip_breakers') or []))
             stored = graph.memory.record_incident({
+                'mitigation_ms': round((time.perf_counter() - ctx['t0']) * 1000.0, 1), 'steps': ctx.get('steps'),
+                'shed_mw': round(shed, 3), 'downstream': ctx.get('downstream'),
+                'reused_playbook': (ctx.get('reused') or {}).get('signature'),
                 'run_id': run_id, 'source': ctx['source'], 'scenario': ctx['scenario'], 'origin_id': ctx['origin'],
                 'trips': ctx['trips'], 'demand_scale': ctx['demand_scale'], 'overloads': ctx.get('overloads'),
                 'required_relief_mw': ctx.get('relief'), 'state_version': ctx.get('state_version'),
                 'status': status, 'final_outcome': 'WITHIN_LIMITS' if status == 'MITIGATED' else 'UNRESOLVED',
                 'note': note, 'plan': ctx.get('plan'), 'breaker_targets': breakers})
             sim._memory = {**(sim._memory or {}), 'recorded_incident': stored['incident_id'],
-                           'playbook': stored['playbook'], 'signature': stored['signature']}
+                           'playbook': stored['playbook'], 'signature': stored['signature'],
+                           'reused_playbook': stored.get('reused_playbook'), 'reused_credit': stored.get('reused_credit')}
         except graph.GraphError as exc:
             sim._agent_log += f' (memory not recorded: {exc})'
 
@@ -161,14 +175,18 @@ class GridPulseInterceptor:
                 return False
             plan = await asyncio.to_thread(self._playbook_plan, run_id)
             if plan:
-                sim._agent_log = 'Reusing a playbook from graph memory; the graph guard re-approved it for the current state.'
+                reused = self._ctx[run_id]['reused']
+                sim._agent_log = (f"Reusing playbook {reused['signature']} from graph memory ({reused['why']}); "
+                                  'the graph guard re-approved it for the current state.')
                 self._ctx[run_id]['source'] = 'PLAYBOOK'
             else:
+                self._ctx[run_id]['steps'] += 2  # asset discovery + greedy search
                 plan = self._greedy_plan(required, assets)
             await asyncio.to_thread(self._execute, run_id, plan, 'Projected cascade overload relief')
-            sim._agent_log = ('Graph-verified mitigation complete (playbook reused). Tier-1 assets remain protected.'
-                              if self._ctx[run_id]['source'] == 'PLAYBOOK'
-                              else 'Graph-verified mitigation complete. Tier-1 assets remain protected.')
+            reused = self._ctx[run_id].get('reused')
+            sim._agent_log = (f"Graph-verified mitigation complete (playbook reused: {reused['signature']}"
+                              f"{'' if reused['exact'] else ', generalised from a similar fault'}). Tier-1 assets remain protected."
+                              if reused else 'Graph-verified mitigation complete. Tier-1 assets remain protected.')
             return True
 
     async def _agent(self, run_id, scenario_id):
@@ -199,6 +217,10 @@ class GridPulseInterceptor:
                 _step({'kind': 'fallback', 'text': f"State changed; plan no longer approved {recheck['reasons']}."})
                 return False
             self._ctx[run_id]['source'] = 'AGENT'
+            self._ctx[run_id]['steps'] = len(advice['tool_calls']) + 1
+            same = [sg for sg in self._ctx[run_id].get('suggestions') or [] if _same_plan(sg['plan'], advice['plan'])]
+            if same:
+                self._ctx[run_id]['reused'] = same[0]
             sim._agent_log = f"Executing agent plan approved by the graph guard: {advice['summary']}"
             await asyncio.to_thread(self._execute, run_id, advice['plan'], 'Agent plan approved by graph guard')
             sim._agent_log = f"AI operator mitigation verified. {advice['summary']}"

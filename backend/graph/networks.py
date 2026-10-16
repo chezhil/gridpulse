@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import topology as topo
-from .client import GraphClient, GraphNotSeededError, GraphSettings, InvalidRequestError, UnknownEntityError, get_client
+from .client import GraphClient, GraphError, GraphNotSeededError, GraphSettings, InvalidRequestError, UnknownEntityError, get_client
 from .contingency import scan_n1
 from .queries import read_grid_snapshot
 from .thermal import project_loading
@@ -743,7 +743,9 @@ def simulate(owner: str, network_id: str, cases: List[Dict[str, Any]], threshold
                             "contingencies": scan["contingencies"]})
             continue
         projection = project_loading(snapshot, trips, threshold_pct, overrides)
-        mitigation = suggest_mitigation(snapshot, trips, overrides, threshold_pct)
+        mitigation = _from_memory(client, snapshot, trips, overrides, threshold_pct, projection) if projection["outcome"] == "OVERLOAD_PREDICTED" else None
+        if mitigation is None:
+            mitigation = suggest_mitigation(snapshot, trips, overrides, threshold_pct)
         results.append(_case_result(name, projection, snapshot, mitigation))
     return {
         "network_id": network_id,
@@ -756,6 +758,7 @@ def simulate(owner: str, network_id: str, cases: List[Dict[str, Any]], threshold
             "within_limits": sum(1 for r in results if r.get("outcome") == "WITHIN_LIMITS" or r.get("n1_secure")),
             "saved_by_mitigation": sum(1 for r in results if r.get("mitigation", {}).get("verdict") == "SAVED"),
             "not_saveable": sum(1 for r in results if r.get("mitigation", {}).get("verdict") == "NOT_SAVEABLE"),
+            "solved_from_memory": sum(1 for r in results if r.get("mitigation", {}).get("from_memory")),
         },
         "evidence": [snap_q.evidence()],
         "timing": {"engine_total_ms": round((time.perf_counter() - started) * 1000.0, 3), "graph_server_ms": round(snap_q.server_ms, 4)},
@@ -781,3 +784,105 @@ def snapshot_from_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
                   "active_injection_mw": 0.0, "status": "STANDBY"} for b in normalized["batteries"]],
         "state_version": 0,
     }
+
+
+
+# --------------------------------------------------------------------------- #
+# Learning on user networks: memory-first mitigation and rehearsal training   #
+# --------------------------------------------------------------------------- #
+
+
+def _origin_for(trips: List[Tuple[str, str]], projection: Dict[str, Any]) -> Optional[str]:
+    if trips:
+        return trips[0][0]
+    over = [o["element"] for o in projection["overloads"] if o["kind"] == "SUBSTATION"]
+    subs = [s["id"] for s in projection["substations"]]
+    return (over or subs or [None])[0]
+
+
+def _from_memory(client: GraphClient, snapshot: Dict[str, Any], trips: List[Tuple[str, str]], overrides: Dict[str, Any],
+                 threshold_pct: float, projection: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Try learned plans (same or similar faults) before searching; None if memory has nothing that works."""
+    from . import memory
+    origin = _origin_for(trips, projection)
+    if origin is None:
+        return None
+    try:
+        learned = memory.suggest(origin, [{"span_id": t, "circuit": c} for t, c in trips], overrides.get("demand_scale"), client=client)
+    except GraphError:
+        return None
+    consumers = {c["breaker_id"]: c for c in snapshot["consumers"]}
+    for sg in learned["suggestions"]:
+        plan = sg["plan"]
+        if any(b not in consumers or consumers[b].get("priority_tier") != 3 for b in plan.get("trip_breakers") or []):
+            continue
+        bess = {b["id"]: b for b in snapshot["bess"]}
+        if any(bid not in bess or mw > float(bess[bid].get("max_discharge_mw") or 0) for bid, mw in (plan.get("bess_dispatch") or {}).items()):
+            continue
+        off = sorted(set(overrides.get("deenergized_consumers") or []) | {consumers[b]["id"] for b in plan.get("trip_breakers") or []})
+        ov = {**overrides, "deenergized_consumers": off, "bess_injection_mw": {**(overrides.get("bess_injection_mw") or {}), **plan.get("bess_dispatch", {})}}
+        trial = project_loading(snapshot, trips, threshold_pct, ov)
+        if trial["outcome"] == "WITHIN_LIMITS":
+            return {"verdict": "SAVED", "from_memory": True, "playbook": sg["signature"], "why": sg["why"], "score": sg["score"],
+                    "plan": {"bess_dispatch": plan.get("bess_dispatch", {}), "trip_breakers": plan.get("trip_breakers", []), "shed_loads": off},
+                    "final_outcome": trial["outcome"], "remaining_overloads": []}
+    return None
+
+
+def rehearse(owner: str, network_id: str, max_cases: int = 40, demand_scales: Tuple[float, ...] = (1.1, 1.2),
+             threshold_pct: float = 95.0, base: Optional[GraphClient] = None) -> Dict[str, Any]:
+    """'Train' a network: rehearse its critical outages and demand surges, and store what worked as playbooks.
+
+    Cases are the N-1-critical single-line outages plus demand surges. Each is solved by the
+    simulator (memory first, then search); results are written to the network's own graph
+    memory with source REHEARSAL, so later simulations and the agent start with experience.
+    """
+    from . import memory
+    started = time.perf_counter()
+    if isinstance(max_cases, bool) or not isinstance(max_cases, int) or not 1 <= max_cases <= 200:
+        raise InvalidRequestError("max_cases must be between 1 and 200")
+    client = owned_client(owner, network_id, base)
+    snapshot, _ = read_grid_snapshot(client)
+    scan = scan_n1(snapshot, threshold_pct)
+    cases: List[Dict[str, Any]] = [{"trips": [(c["span_id"], c["circuit"])], "demand_scale": None}
+                                   for c in scan["contingencies"] if not c["secure"]]
+    cases += [{"trips": [], "demand_scale": d} for d in demand_scales]
+    cases = cases[:max_cases]
+    learned = saved = failed = skipped = reused = 0
+    log = []
+    for case in cases:
+        overrides = {"demand_scale": case["demand_scale"]} if case["demand_scale"] else {}
+        t0 = time.perf_counter()
+        projection = project_loading(snapshot, case["trips"], threshold_pct, overrides)
+        if projection["outcome"] == "WITHIN_LIMITS":
+            skipped += 1
+            continue
+        if projection["outcome"] == "ISLANDING_PREDICTED":
+            mitigation = {"verdict": "NOT_SAVEABLE", "plan": {}, "reason": "islanding"}
+        else:
+            mitigation = _from_memory(client, snapshot, case["trips"], overrides, threshold_pct, projection) \
+                or suggest_mitigation(snapshot, case["trips"], overrides, threshold_pct)
+        origin = _origin_for(case["trips"], projection)
+        plan = {k: mitigation.get("plan", {}).get(k) or ([] if k == "trip_breakers" else {}) for k in ("trip_breakers", "bess_dispatch")}
+        shed = sum(c["mw_demand"] for c in snapshot["consumers"] if c.get("breaker_id") in plan["trip_breakers"])
+        status = "MITIGATED" if mitigation["verdict"] == "SAVED" else "FAILED"
+        stored = memory.record_incident({
+            "source": "REHEARSAL", "scenario": "REHEARSAL", "origin_id": origin,
+            "trips": [{"span_id": t, "circuit": c} for t, c in case["trips"]], "demand_scale": case["demand_scale"],
+            "overloads": [o["element"] for o in projection["overloads"]], "required_relief_mw": projection["required_relief_mw"],
+            "status": status, "final_outcome": mitigation.get("final_outcome") or "", "plan": plan if status == "MITIGATED" else None,
+            "breaker_targets": {c["breaker_id"]: c["id"] for c in snapshot["consumers"] if c.get("breaker_id")},
+            "mitigation_ms": round((time.perf_counter() - t0) * 1000.0, 1), "steps": 1 if mitigation.get("from_memory") else 2,
+            "shed_mw": round(shed, 3), "downstream": [s["id"] for s in projection["substations"] if s["overload"] or s["overloaded_supply_circuits"]],
+            "reused_playbook": mitigation.get("playbook"),
+        }, client)
+        saved += status == "MITIGATED"
+        failed += status == "FAILED"
+        reused += bool(mitigation.get("from_memory"))
+        learned += bool(stored["playbook"] and stored["playbook"]["success_count"] == 1 and status == "MITIGATED" and not mitigation.get("from_memory"))
+        log.append({"case": stored["signature"], "verdict": mitigation["verdict"], "from_memory": bool(mitigation.get("from_memory")),
+                    "playbook": mitigation.get("playbook"), "incident": stored["incident_id"]})
+    curve = memory.learning_curve(client)
+    return {"network_id": network_id, "cases": len(cases), "skipped_within_limits": skipped, "saved": saved, "not_saveable": failed,
+            "solved_from_memory": reused, "new_playbooks": learned, "log": log, "memory": curve["summary"],
+            "timing": {"engine_total_ms": round((time.perf_counter() - started) * 1000.0, 1)}}

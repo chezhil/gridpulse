@@ -62,6 +62,7 @@ def runtime(monkeypatch, tmp_path):
 
     monkeypatch.setattr(graph, 'read_state_version', lambda client=None: state['version'])
     monkeypatch.setattr(graph.memory, 'recall', lambda *a, **k: {'incidents': [], 'playbooks': [], 'evidence': []})
+    monkeypatch.setattr(graph.memory, 'suggest', lambda *a, **k: {'suggestions': [], 'evidence': []})
     monkeypatch.setattr(graph.memory, 'record_incident', lambda *a, **k: {
         'incident_id': 'INC_FIXTURE', 'signature': 'FIXTURE', 'playbook': None, 'evidence': []})
     monkeypatch.setattr(graph, 'init_graph', lambda **kw: {})

@@ -99,7 +99,9 @@ def _headline(name: str, result: Dict[str, Any]) -> str:
     if name == 'check_breaker':
         return f"trip_allowed={result.get('trip_allowed')} {result.get('reasons') or ''}".strip()
     if name == 'recall_memory':
-        return f"{len(result.get('incidents', []))} past incidents, {len(result.get('playbooks', []))} playbooks nearby"
+        sg = result.get('suggestions') or []
+        return (f"{len(result.get('incidents', []))} past incidents, {len(result.get('playbooks', []))} playbooks nearby"
+                + (f"; best learned plan {sg[0]['signature']} (score {sg[0]['score']})" if sg else ''))
     if name == 'verify_tier1_protection':
         return str(result.get('outcome'))
     if name == 'find_islands':
@@ -260,8 +262,14 @@ def briefing(question: str, origin_id: Optional[str] = None,
 
     try:
         mem = graph.memory.recall(origin, 2)
+        snapshot, _ = graph.read_grid_snapshot()
+        trips = [{'span_id': c['span_id'], 'circuit': c['circuit']} for c in snapshot['circuits'] if c['status'] == 'TRIPPED']
+        learned = graph.memory.suggest(origin, trips)
+        mem['suggestions'] = [{k: sg[k] for k in ('signature', 'plan', 'score', 'why')} for sg in learned['suggestions']]
+        mem['evidence'] = mem['evidence'] + learned['evidence']
         step('recall_memory', {'origin_id': origin, 'hops': 2}, mem)
-        lines.append('MEMORY ' + json.dumps(_compact('recall_memory', mem), default=str, separators=(',', ':')))
+        lines.append('MEMORY (past incidents nearby; suggestions = learned plans ranked for this fault) '
+                     + json.dumps(_compact('recall_memory', mem), default=str, separators=(',', ':')))
     except graph.GraphError as exc:
         lines.append(f'MEMORY unavailable: {exc}')
     try:

@@ -83,3 +83,19 @@ def test_import_matpower_over_http(api):
     assert bad.status_code == 422
     assert api.get("/api/networks/samples/nope").status_code == 404
     api.delete(f"/api/networks/{created.json()['id']}", headers=alice)
+
+
+def test_rehearsal_trains_a_network_over_http(api):
+    alice = login(api, "REHEARSE_HTTP")
+    nid = api.post("/api/networks", headers=alice, json={"template": "demo_corridor"}).json()["id"]
+    case = {"cases": [{"name": "lose TX_885", "trip": [{"span_id": "TX_885", "circuit": "UPPER_PRIMARY"}]}]}
+    before = api.post(f"/api/networks/{nid}/simulate", headers=alice, json=case).json()["cases"][0]["mitigation"]
+    assert before["verdict"] == "SAVED" and not before.get("from_memory")
+    r = api.post(f"/api/networks/{nid}/rehearse", headers=alice, json={"max_cases": 20})
+    assert r.status_code == 200, r.text
+    assert r.json()["saved"] >= 9 and r.json()["memory"]["playbooks"] >= 9
+    after = api.post(f"/api/networks/{nid}/simulate", headers=alice, json=case).json()["cases"][0]["mitigation"]
+    assert after["verdict"] == "SAVED" and after["from_memory"] is True
+    mem = api.get(f"/api/networks/{nid}/memory", headers=alice).json()
+    assert mem["summary"]["incidents"] == r.json()["saved"] + r.json()["not_saveable"]
+    api.delete(f"/api/networks/{nid}", headers=alice)

@@ -187,6 +187,21 @@ def memory_playbooks(client: GraphClient = Depends(get_client)) -> Dict[str, Any
     return _run(lambda: memory.list_playbooks(client))
 
 
+@router.get("/memory/learning")
+def memory_learning(client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """Learning curve: incidents over time, how each was solved, playbook reuse and retirement."""
+    return _run(lambda: memory.learning_curve(client))
+
+
+@router.get("/memory/suggest")
+def memory_suggest(origin_id: str, client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
+    """Learned plans ranked for a fault at origin_id (span origins assume their primary circuit tripped)."""
+    def run():
+        trips = [{"span_id": origin_id, "circuit": "UPPER_PRIMARY"}] if origin_id.startswith("TX_") else []
+        return memory.suggest(origin_id, trips, client=client)
+    return _run(run)
+
+
 @router.get("/memory/recall")
 def memory_recall(origin_id: str, hops: int = 2, client: GraphClient = Depends(get_client)) -> Dict[str, Any]:
     """Incidents and playbooks within `hops` grid hops of a span or node."""

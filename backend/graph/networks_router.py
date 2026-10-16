@@ -173,3 +173,25 @@ def islands(network_id: str, session: OperatorSession = Depends(verify_operator_
 @networks_router.get("/{network_id}/zones")
 def zones(network_id: str, session: OperatorSession = Depends(verify_operator_token)) -> Dict[str, Any]:
     return _run(lambda: algorithms.zones(networks.owned_client(session.operator_id, network_id)))
+
+
+
+class RehearseBody(BaseModel):
+    max_cases: int = Field(40, ge=1, le=200)
+
+
+@networks_router.post("/{network_id}/rehearse")
+def rehearse(network_id: str, body: RehearseBody, session: OperatorSession = Depends(verify_operator_token)) -> Dict[str, Any]:
+    """Train the network's memory by rehearsing its critical outages and demand surges."""
+    return _run(lambda: networks.rehearse(session.operator_id, network_id, body.max_cases))
+
+
+@networks_router.get("/{network_id}/memory")
+def network_memory(network_id: str, session: OperatorSession = Depends(verify_operator_token)) -> Dict[str, Any]:
+    """Learning curve and playbooks of a saved network."""
+    from . import memory
+
+    def run():
+        client = networks.owned_client(session.operator_id, network_id)
+        return {**memory.learning_curve(client), "playbooks": memory.list_playbooks(client)["playbooks"]}
+    return _run(run)
