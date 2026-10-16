@@ -162,12 +162,12 @@
     const color=bad?topoColors.down:kind==='Tower'?(dark?'#c5e9fa':'#0369a1'):kind==='BESS'?'#a78bfa':kind==='HOSPITAL'?'#34d399':kind==='HydroPlant'?'#38bdf8':'#45caff';
     const tower=kind==='Tower';
     ctx.save();ctx.translate(x,y);
-    ctx.fillStyle=tower?(dark?'#040814':'#f8fafc'):(dark?'#0d2238':'#e0f2fe');ctx.strokeStyle=bad?'#fb7185':color;ctx.lineWidth=1.25;
-    ctx.beginPath();ctx.roundRect(tower?-27:-18,tower?-30:-18,tower?54:36,tower?60:36,8);ctx.fill();if(!tower)ctx.stroke();
-    GridPulseIcons.draw(ctx,kind,color,tower?(compact?50:58):34);
+    ctx.fillStyle=dark?'#0d2238':'#e0f2fe';ctx.strokeStyle=bad?'#fb7185':color;ctx.lineWidth=1.25;
+    ctx.beginPath();ctx.roundRect(-18,-18,36,36,8);ctx.fill();ctx.stroke();
+    GridPulseIcons.draw(ctx,kind,color,tower?32:34);
     ctx.font=`600 ${compact?9:10}px "JetBrains Mono",monospace`;ctx.textAlign='center';ctx.textBaseline='top';ctx.fillStyle=dark?'#dbeafe':'#334155';
     const labels={HYDRO_ALPINE_01:'HYDRO',BESS_METRO_01:'BESS',SUB_METRO:'SUBSTATION',HOSP_ST_JUDE:'HOSPITAL',RES_VALLEY_SUBURBS:'HOMES',COM_METRO_CORE:'METRO',IND_METRO_12:'INDUSTRY'};
-    ctx.fillText(labels[node.id]||node.id,0,tower?32:22);ctx.restore();
+    ctx.fillText(labels[node.id]||node.id,0,22);ctx.restore();
   }
   window.gridpulseDrawTopology=(canvas,ctx)=>{
     if(!canvas||!ctx)return;const dpr=Math.min(devicePixelRatio||1,2),w=canvas.width/dpr,h=canvas.height/dpr,dark=isNightMode;

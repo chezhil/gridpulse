@@ -27,7 +27,7 @@
   const STYLE = [
     { selector: 'node', style: { label: 'data(label)', color: '#dbeafe', 'font-size': 10, 'font-weight': 600, 'text-valign': 'bottom', 'text-margin-y': 5, ...icon('Consumer','#94a3b8',31,31) } },
     { selector: 'node.HydroPlant', style: icon('HydroPlant','#38bdf8',34,34) },
-    { selector: 'node.Tower', style: icon('Tower','#45caff',38,46) },
+    { selector: 'node.Tower', style: icon('Tower','#45caff',34,34) },
     { selector: 'node.Substation', style: icon('Substation','#38bdf8',34,34) },
     { selector: 'node.BESS', style: icon('BESS','#a78bfa',34,34) },
     { selector: 'node.Consumer', style: icon('Consumer','#94a3b8',31,31) },

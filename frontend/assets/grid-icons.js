@@ -48,7 +48,7 @@
   function url(kind, color) {
     const key = `${kind}:${color}`;
     if (cache.has(key)) return cache.get(key);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><g transform="translate(32 32)" stroke="${safeColor(color)}" stroke-width="${kind === 'Tower' ? '2.5' : '3.2'}" stroke-linecap="round" stroke-linejoin="round">${iconPaths(kind).map(d => `<path d="${d}"/>`).join('')}</g></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><g transform="translate(32 32)" stroke="${safeColor(color)}" stroke-width="${kind === 'Tower' ? '2.2' : '3.2'}" stroke-linecap="round" stroke-linejoin="round">${iconPaths(kind).map(d => `<path d="${d}"/>`).join('')}</g></svg>`;
     const value = `data:image/svg+xml,${encodeURIComponent(svg)}`;
     cache.set(key, value);
     return value;
@@ -57,7 +57,7 @@
     ctx.save();
     ctx.scale(size / 64, size / 64);
     ctx.strokeStyle = safeColor(color);
-    ctx.lineWidth = kind === 'Tower' ? 2.5 : 3.2;
+    ctx.lineWidth = kind === 'Tower' ? 2.2 : 3.2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     iconPaths(kind).forEach(d => ctx.stroke(new Path2D(d)));
