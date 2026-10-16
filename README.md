@@ -15,7 +15,11 @@ Start the app (see Quick start below), open **http://localhost:8000/lab.html** a
 
 1. **Live Ops.** Pick *AI operator* mode and click *Lightning TX_882*. Watch each step stream in: the memory recall, the blast-radius trace (with its Cypher), the mitigation search, the plan, the graph guard's verdict, then execution and verification.
 2. **Run Wildfire.** Graph memory recalls the TX_882 incident, which is 2 hops away. The **Memory** tab shows incidents, actions and learned playbooks. Re-run lightning and the proven playbook is reused once the guard re-approves it.
-3. **Network Builder.** Create from the *IEEE 118-bus* template, or edit the spec and save. It's stored in its own graph, `gridpulse_net_<id>`.
+3. **Network Builder.** Two ways to get a grid in:
+   - **Draw one.** Place buses, substations and generators by clicking. Connect lines by clicking two nodes. Attach loads and batteries to substations. Edit properties in the side panel. Undo and live validation are built in.
+   - **Import a standard MATPOWER `.m` file,** or load a bundled IEEE 14/30/118 sample.
+
+   Saved networks keep their drawn layout, each in its own graph `gridpulse_net_<id>`.
 4. **Test Cases.** Run trips, demand surges and an N-1 scan, then click a row to highlight its overloads. Each case gets the smallest safe fix (battery first, then industrial shedding), or an honest *NOT_SAVEABLE*.
 5. **Analysis.** Try N-1 security, betweenness criticality, connected components (`algo.WCC`), zones (`algo.labelPropagation`), k-shortest reroutes (`algo.SPpaths`), and the blast-radius trace.
 6. **Audit.** *Verify chain* recomputes every record's hash and link.
@@ -125,7 +129,7 @@ CALL algo.BFS(o, 6, 'LINE')   // benchmark
 
 ## Validation and honest benchmarks
 
-- **Power flow vs pandapower.** On the public IEEE 118-bus case (186 branches), `dc-pf/1` matches pandapower `rundcpp` within **0.001 MW** on every branch. This runs in CI against a stored reference (`backend/graph/data/`).
+- **Power flow vs pandapower.** The public IEEE 14, 30 and 118-bus cases (247 branches in total) are imported through our own MATPOWER parser, and `dc-pf/1` matches pandapower `rundcpp` within **0.001 MW** on every branch. This runs in CI against stored references (`backend/graph/data/`).
 - **Graph vs SQL.** Every engine's results are checked equal before timing.
   - Local 6-hop traces take **well under 1 ms** for FalkorDB Cypher (0.03–0.04 ms) and for an indexed SQLite recursive CTE (0.04–0.06 ms), on grids from 1k to 100k buses.
   - The GraphBLAS `algo.BFS` wins on deep traversals of small graphs, but its cost grows with graph size.
@@ -219,7 +223,7 @@ Stop the Compose backend first (`docker compose stop backend`) before starting a
 - **Event loop**: graph and SQLite work in scenario, reset and tool paths runs in worker threads while the simulator lock is held, so WebSocket telemetry keeps flowing during a run.
 - **Graph memory**: `GET /api/graph/memory/incidents`, `/memory/playbooks` and `/memory/recall?origin_id=` expose episodic and procedural memory. Every finished run is recorded; memory survives grid resets.
 - **AI-operator mode**: `POST /api/sim/trigger-scenario/{1|2|3}?mode=agent` streams agent steps in telemetry (`agent_steps`), executes only guard-approved plans, and falls back to the deterministic pipeline.
-- **User-built networks**: `/api/networks` covers create, list, get, replace, delete, validate, templates and simulate, plus topology, trace, contingency, criticality, reroute, islands and zones per network. Networks are scoped to the logged-in operator.
+- **User-built networks**: `/api/networks` covers create, list, get, replace, delete, validate, templates, `convert` (MATPOWER `.m` or spec JSON to a preview spec), `samples/{ieee14,ieee30,ieee118}` and simulate, plus topology, trace, contingency, criticality, reroute, islands and zones per network. Networks are scoped to the logged-in operator.
 - **Tests and CI**: `.github/workflows/ci.yml` runs the full suite against a FalkorDB service container on every push and pull request. Coverage includes:
   - randomised safety properties over 16 seeded fault/demand/SOC combinations (`backend/mcp/test_random_safety.py`)
   - audit tamper detection

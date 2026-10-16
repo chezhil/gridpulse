@@ -242,7 +242,14 @@ Finished runs are stored in the grid graph as `(:Incident)-[:AT]->(towers/substa
 
 - **Specs.** A JSON spec lists generators, buses, substations, lines (with an optional backup circuit), loads and batteries. It is validated, with every problem listed, and written into its own graph, `gridpulse_net_<id>`, using the canonical labels, so every engine feature works on it.
 - **Registry.** The graph `gridpulse_registry` records each network's owner; other operators get 404.
-- **Templates:** `demo_corridor`, `ring`, `meshed_city`, and `ieee118`. The IEEE 118-bus case is public data via pandapower, with synthetic ratings, tiers and batteries; see [`data/build_ieee118.py`](data/build_ieee118.py).
+- **Templates:** `demo_corridor`, `ring`, `meshed_city`, `ieee14`, `ieee30` and `ieee118`. The IEEE cases are public data. [`data/build_ieee_cases.py`](data/build_ieee_cases.py) exports them from pandapower as MATPOWER files and imports them through our own importer.
+- **Import ([`importers.py`](importers.py)).** MATPOWER `.m` files are parsed without extra dependencies, reading bus, gen, branch and baseMVA:
+  - Taps are folded into reactance. Out-of-service units are dropped, and isolated buses are skipped.
+  - Negative loads become generation. Placeholder "unlimited" capacities become no limit.
+  - The converter reports its overlays: synthetic priority tiers, ratings of 1.6 × base flow where `rateA = 0`, substation capacities, and optional batteries.
+
+  `POST /api/networks/convert` returns a preview spec without saving it.
+- **Layout.** Specs may carry `layout: {id: {x, y}}`, the positions from the Lab's click-to-draw editor.
 - **Simulation.** `simulate()` runs trips, demand scaling, battery and shedding what-ifs, and N-1. For each overloaded case it searches for the smallest safe fix:
   1. Each round, try every battery and Tier-3 load, re-solve the grid, and keep whichever removes the most total overload.
   2. Prune any shedding that turned out to be unnecessary.

@@ -38,6 +38,7 @@
     document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
     document.querySelectorAll('main section').forEach((s) => s.classList.toggle('on', s.id === t));
     Object.values(cys).forEach((c) => c && c.resize());
+    if (t === 'builder') { editor.resize(); editor.cy.fit(undefined, 30); }
     if (t === 'memory') loadMemory();
     if (t === 'audit') loadAudit();
     if (t === 'sim') renderCases();
@@ -178,38 +179,66 @@
   })));
   $('reset').onclick = () => busy($('reset'), async () => { await api('/api/sim/reset', { method: 'POST', body: '{}' }); await loadLiveTopology(); toast('Grid reset', true); });
 
-  // ---------------- network builder ----------------
-  const FIELDS = {
-    buses: [['id', 'B1']], substations: [['id', 'SUB_1'], ['capacity_mw', 300]],
-    generators: [['id', 'GEN_1'], ['connects_to', 'B1'], ['output_mw', 0], ['capacity_mw', 500]],
-    lines: [['id', 'L1'], ['from', 'B1'], ['to', 'SUB_1'], ['impedance_pu', 0.01], ['limit_mw', 300], ['backup_limit_mw', '']],
-    loads: [['id', 'LOAD_1'], ['substation', 'SUB_1'], ['mw_demand', 50], ['priority_tier', 2]],
-    batteries: [['id', 'BESS_1'], ['substation', 'SUB_1'], ['max_discharge_mw', 40], ['soc_pct', 80]],
-  };
-  function renderAddFields() {
-    $('addFields').innerHTML = FIELDS[$('addKind').value].map(([k, v]) => `<input data-f="${k}" placeholder="${k}" value="${v}" size="${String(v).length > 6 ? 10 : 7}" title="${k}">`).join('');
-  }
-  $('addKind').onchange = renderAddFields; renderAddFields();
-  function readSpec() { try { return JSON.parse($('spec').value || '{}'); } catch (e) { throw new Error('Spec is not valid JSON: ' + e.message); } }
-  $('addEl').onclick = () => {
-    try {
-      const spec = readSpec(); const kind = $('addKind').value; const el = {};
-      $('addFields').querySelectorAll('input').forEach((i) => {
-        const k = i.dataset.f, v = i.value.trim(); if (v === '') return;
-        el[k] = isNaN(Number(v)) || ['id', 'from', 'to', 'connects_to', 'substation'].includes(k) ? v.toUpperCase() : Number(v);
-      });
-      if (kind === 'lines' && el.backup_limit_mw) { el.backup = { limit_mw: el.backup_limit_mw, impedance_pu: (el.impedance_pu || 0.01) * 1.5 }; }
-      delete el.backup_limit_mw;
-      (spec[kind] = spec[kind] || []).push(el);
+  // ---------------- network builder (click-to-draw editor) ----------------
+  let validateTimer = null;
+  const editor = GridEditor.create('cyNet', {
+    onChange: (spec) => {
       $('spec').value = JSON.stringify(spec, null, 1);
-      $('specMsg').textContent = `added ${kind.slice(0, -1)} ${el.id} (not saved yet)`; $('specMsg').className = 'small warn';
-    } catch (e) { toast(e.message); }
-  };
+      const c = editor.counts();
+      $('edCounts').textContent = `${c.generators} generators · ${c.buses} buses · ${c.substations} substations · ${c.lines} lines · ${c.loads} loads · ${c.batteries} batteries`;
+      $('specMsg').textContent = currentNet ? 'unsaved changes' : 'not saved yet'; $('specMsg').className = 'small warn';
+      clearTimeout(validateTimer); validateTimer = setTimeout(liveValidate, 600);
+    },
+    onSelect: renderProps,
+    onStatus: (msg, cls) => { $('edHelp').textContent = msg; $('edHelp').className = cls ? cls : 'muted'; },
+  });
+  async function liveValidate() {
+    if (!token) { $('edValid').textContent = 'sign in to validate'; $('edValid').className = 'pill'; return; }
+    try {
+      const r = await api('/api/networks/validate', { method: 'POST', body: JSON.stringify({ spec: editor.getSpec() }) });
+      $('edValid').textContent = r.warnings.length ? `valid · ${r.warnings.length} warning(s)` : 'valid ✓';
+      $('edValid').className = 'pill ' + (r.warnings.length ? 'warn' : 'ok'); $('edValid').title = r.warnings.join('\n');
+    } catch (e) {
+      const n = (e.message.match(/•/g) || []).length;
+      $('edValid').textContent = `${n || 1} problem(s)`; $('edValid').className = 'pill bad'; $('edValid').title = e.message;
+    }
+  }
+  $('edValid').onclick = () => $('edValid').title && toast($('edValid').title, $('edValid').classList.contains('ok'));
+  function renderProps(sel) {
+    if (!sel) { $('edProps').innerHTML = '<span class="muted">Select an element on the canvas.</span>'; return; }
+    $('edProps').innerHTML = `<b>${esc(sel.label)} ${esc(sel.id)}</b>` + sel.fields.map((f) => f.type === 'tier'
+      ? `<label>${f.key}<select data-k="${f.key}">${[1, 2, 3].map((t) => `<option value="${t}" ${Number(f.value) === t ? 'selected' : ''}>${t} ${['', 'hospital / critical', 'protected', 'sheddable'][t]}</option>`).join('')}</select></label>`
+      : `<label>${f.key}<input data-k="${f.key}" type="${f.type === 'number' ? 'number' : 'text'}" step="any" value="${esc(f.value)}"></label>`).join('') +
+      `<div class="row"><button class="b p" id="propApply">Apply</button><button class="b d" id="propDelete">Delete</button></div>`;
+    $('propApply').onclick = () => {
+      const values = {}; $('edProps').querySelectorAll('[data-k]').forEach((i) => (values[i.dataset.k] = i.value));
+      try { editor.applyProps(sel.kind, sel.id, values); } catch (e) { toast(e.message); }
+    };
+    $('propDelete').onclick = () => editor.remove(sel.kind, sel.id);
+  }
+  document.querySelectorAll('#edModes [data-mode]').forEach((b) => (b.onclick = () => {
+    document.querySelectorAll('#edModes [data-mode]').forEach((x) => x.classList.toggle('on', x === b)); editor.setMode(b.dataset.mode);
+  }));
+  $('edUndo').onclick = () => editor.undoLast() || toast('Nothing to undo', true);
+  $('edLayout').onclick = () => editor.autoLayout();
+  document.addEventListener('keydown', (e) => {
+    if (!$('builder').classList.contains('on') || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); editor.undoLast(); }
+  });
+  function loadIntoEditor(spec, label) {
+    editor.load(spec); $('edName').textContent = label || spec.name || '';
+    $('spec').value = JSON.stringify(editor.getSpec(), null, 1);
+    const c = editor.counts();
+    $('edCounts').textContent = `${c.generators} generators · ${c.buses} buses · ${c.substations} substations · ${c.lines} lines · ${c.loads} loads · ${c.batteries} batteries`;
+    liveValidate();
+  }
+  $('specApply').onclick = () => { try { loadIntoEditor(JSON.parse($('spec').value)); } catch (e) { toast('Spec is not valid JSON: ' + e.message); } };
+
   async function loadNetworks(selectId) {
     if (!token) return;
     const [list, tpl] = await Promise.all([api('/api/networks'), api('/api/networks/templates')]);
     $('tplSel').innerHTML = tpl.templates.map((t) => `<option value="${t.id}" title="${esc(t.description)}">${esc(t.name)} (${t.counts.buses + t.counts.substations} buses)</option>`).join('');
-    $('netSel').innerHTML = '<option value="">— select —</option>' + list.networks.map((n) => `<option value="${n.id}">${esc(n.name)} · ${n.id}</option>`).join('');
+    $('netSel').innerHTML = '<option value="">— your saved networks —</option>' + list.networks.map((n) => `<option value="${n.id}">${esc(n.name)} · ${n.id}</option>`).join('');
     $('anTarget').innerHTML = '<option value="live">Live demo grid</option>' + list.networks.map((n) => `<option value="${n.id}">${esc(n.name)} · ${n.id}</option>`).join('');
     if (selectId) { $('netSel').value = selectId; await openNetwork(selectId); }
   }
@@ -217,36 +246,51 @@
     if (!id) return;
     const [net, topo] = await Promise.all([api(`/api/networks/${id}`), api(`/api/networks/${id}/topology`)]);
     currentNet = { id, spec: net.spec, topo };
-    $('spec').value = JSON.stringify(net.spec, null, 1);
-    $('specMsg').textContent = ''; $('simNet').textContent = `${net.name} · ${id}`;
+    loadIntoEditor(net.spec, `${net.name} · ${id}`);
+    $('specMsg').textContent = 'saved ✓'; $('specMsg').className = 'small ok'; $('simNet').textContent = `${net.name} · ${id}`;
     $('netInfo').innerHTML = `Graph <span class="mono">gridpulse_net_${id.toLowerCase()}</span> · ${topo.counts.nodes} nodes, ${topo.counts.edges} edges` + (net.warnings.length ? ` · <span class="warn">${esc(net.warnings.join('; '))}</span>` : '');
-    draw('cyNet', topo, describe);
     draw('cySim', topo, describe);
-    if (!cases.length) presetCases();
+    cases = []; presetCases();
   }
+  function startUnsaved(spec, label) { currentNet = null; $('netSel').value = ''; loadIntoEditor(spec, label); $('specMsg').textContent = 'not saved yet'; $('specMsg').className = 'small warn'; }
   $('netSel').onchange = () => busy($('netSel'), () => openNetwork($('netSel').value));
   $('netRefresh').onclick = () => busy($('netRefresh'), () => loadNetworks(currentNet?.id));
-  $('netCreate').onclick = () => busy($('netCreate'), async () => { const n = await api('/api/networks', { method: 'POST', body: JSON.stringify({ template: $('tplSel').value }) }); cases = []; await loadNetworks(n.id); toast(`Created ${n.id}`, true); });
-  $('netBlank').onclick = () => {
-    currentNet = null; $('netSel').value = '';
-    $('spec').value = JSON.stringify({ name: 'My grid', generators: [{ id: 'GEN_1', connects_to: 'B1', output_mw: 0, capacity_mw: 500 }], buses: [{ id: 'B1' }, { id: 'B2' }],
-      substations: [{ id: 'SUB_1', capacity_mw: 300 }], lines: [{ id: 'L1', from: 'B1', to: 'B2', impedance_pu: 0.01, limit_mw: 300 }, { id: 'L2', from: 'B2', to: 'SUB_1', impedance_pu: 0.01, limit_mw: 300, backup: { impedance_pu: 0.015, limit_mw: 200 } }],
-      loads: [{ id: 'CLINIC', substation: 'SUB_1', mw_demand: 30, priority_tier: 1, category: 'HOSPITAL' }, { id: 'HOMES', substation: 'SUB_1', mw_demand: 150, priority_tier: 2 }, { id: 'MILL', substation: 'SUB_1', mw_demand: 60, priority_tier: 3 }],
-      batteries: [{ id: 'BESS_1', substation: 'SUB_1', max_discharge_mw: 40, soc_pct: 80 }] }, null, 1);
-    $('specMsg').textContent = 'blank network: edit, then Save'; $('specMsg').className = 'small warn';
-  };
+  $('netTemplate').onclick = () => busy($('netTemplate'), async () => { const t = await api(`/api/networks/templates/${$('tplSel').value}`); startUnsaved(t.spec, `template: ${t.spec.name}`); });
+  $('netBlank').onclick = () => startUnsaved({ name: 'My grid' }, 'new network: pick a mode and click the canvas');
   $('netDelete').onclick = () => busy($('netDelete'), async () => {
     if (!currentNet || !confirm(`Delete ${currentNet.id}?`)) return;
-    await api(`/api/networks/${currentNet.id}`, { method: 'DELETE' }); currentNet = null; cases = []; await loadNetworks(); toast('Deleted', true);
+    await api(`/api/networks/${currentNet.id}`, { method: 'DELETE' }); currentNet = null; cases = []; editor.load({}); await loadNetworks(); toast('Deleted', true);
   });
-  $('specValidate').onclick = () => busy($('specValidate'), async () => {
-    const r = await api('/api/networks/validate', { method: 'POST', body: JSON.stringify({ spec: readSpec() }) });
-    $('specMsg').textContent = r.warnings.length ? 'valid, warnings: ' + r.warnings.join('; ') : 'valid ✓'; $('specMsg').className = 'small ' + (r.warnings.length ? 'warn' : 'ok');
+  async function save(asNew) {
+    const spec = editor.getSpec();
+    const n = (currentNet && !asNew) ? await api(`/api/networks/${currentNet.id}`, { method: 'PUT', body: JSON.stringify({ spec }) })
+      : await api('/api/networks', { method: 'POST', body: JSON.stringify({ spec }) });
+    await loadNetworks(n.id); toast(`Saved ${n.id}`, true);
+  }
+  $('specSave').onclick = () => busy($('specSave'), () => save(false));
+  $('specSaveNew').onclick = () => busy($('specSaveNew'), () => save(true));
+
+  async function importContent(content, format, name) {
+    const tier1 = $('impTier1').value.trim();
+    const body = { format, content, name, battery_mw: Number($('impBattery').value) || 0 };
+    if (tier1) body.tier1_buses = tier1.split(/[,\s]+/).map(Number).filter((x) => Number.isInteger(x));
+    const r = await api('/api/networks/convert', { method: 'POST', body: JSON.stringify(body) });
+    startUnsaved(r.spec, `imported: ${r.spec.name}`);
+    $('impOut').innerHTML = (r.summary ? `<b>${r.summary.buses} buses · ${r.summary.branches} branches · ${r.summary.generators} generators · ${r.summary.loads} loads</b><br>` : '') +
+      (r.notes || []).map((n) => `• ${esc(n)}`).join('<br>') + (r.warnings.length ? `<br><span class="warn">${esc(r.warnings.join('; '))}</span>` : '') +
+      '<br><span class="ok">Loaded into the editor. Click “Save as new” to store it in FalkorDB.</span>';
+  }
+  $('impFile').onchange = () => busy($('impFile'), async () => {
+    const f = $('impFile').files[0]; if (!f) return;
+    if (f.size > 5e6) throw new Error('File too large (max 5 MB)');
+    const fmt = f.name.endsWith('.json') ? 'gridpulse' : $('impFormat').value;
+    $('impFormat').value = fmt;
+    await importContent(await f.text(), fmt, f.name.replace(/\.[^.]+$/, ''));
   });
-  $('specSave').onclick = () => busy($('specSave'), async () => {
-    const spec = readSpec();
-    const n = currentNet ? await api(`/api/networks/${currentNet.id}`, { method: 'PUT', body: JSON.stringify({ spec }) }) : await api('/api/networks', { method: 'POST', body: JSON.stringify({ spec }) });
-    await loadNetworks(n.id); $('specMsg').textContent = 'saved ✓'; $('specMsg').className = 'small ok';
+  $('impSampleBtn').onclick = () => busy($('impSampleBtn'), async () => {
+    const name = $('impSample').value;
+    const res = await fetch(`${API}/api/networks/samples/${name}`); if (!res.ok) throw new Error('sample not found');
+    await importContent(await res.text(), 'matpower', `${name.toUpperCase()} (imported)`);
   });
 
   // ---------------- test cases ----------------

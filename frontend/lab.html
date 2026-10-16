@@ -24,6 +24,8 @@ main{padding:16px;max-width:1500px;margin:0 auto}section{display:none}section.on
 button.b,select,input,textarea{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:13px Inter}
 button.b{cursor:pointer}button.b:hover{border-color:var(--cyan)}button.p{background:#0c4a6e;border-color:#0e7490}button.d{border-color:#7f1d1d;color:#fecaca}
 button.b:disabled{opacity:.5;cursor:not-allowed}
+button.b.on{background:#0c4a6e;border-color:#38bdf8}
+#edProps label{display:flex;justify-content:space-between;gap:8px;margin:4px 0}#edProps input,#edProps select{width:60%}
 textarea{width:100%;font:12px var(--mono);min-height:260px}input[type=number]{width:90px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
 .cy{height:460px;background:#050b18;border:1px solid var(--line);border-radius:10px}
@@ -90,26 +92,35 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
 <section id="builder">
   <div class="grid g2">
     <div class="card">
-      <h2>Your networks</h2>
-      <div class="row">
-        <select id="netSel"></select><button class="b" id="netRefresh">↻</button>
-        <select id="tplSel"></select><button class="b p" id="netCreate">Create from template</button>
-        <button class="b p" id="netBlank">New blank</button><button class="b d" id="netDelete">Delete</button>
+      <h2>Draw your network <span id="edName" class="mono muted small"></span></h2>
+      <div class="row small" id="edModes">
+        <button class="b on" data-mode="select">↖ Select / move</button><button class="b" data-mode="buses">◆ Bus</button>
+        <button class="b" data-mode="substations">▣ Substation</button><button class="b" data-mode="generators">▲ Generator</button>
+        <button class="b" data-mode="lines">╱ Line</button><button class="b" data-mode="loads">● Load</button>
+        <button class="b" data-mode="batteries">▮ Battery</button><button class="b d" data-mode="delete">✕ Delete</button>
+        <button class="b" id="edUndo" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button><button class="b" id="edLayout">Auto-layout</button>
       </div>
-      <div id="cyNet" class="cy"></div>
-      <p class="small muted" id="netInfo">Each network is stored in its own FalkorDB graph (multi-graph isolation per owner).</p>
+      <div id="cyNet" class="cy" style="height:520px"></div>
+      <div class="row small"><span id="edHelp" class="muted">Click to edit, drag to arrange.</span></div>
+      <div class="row small"><span id="edCounts" class="muted"></span><span id="edValid" class="pill">not validated</span></div>
     </div>
-    <div class="card">
-      <h2>Edit network</h2>
-      <div class="row small">
-        <select id="addKind">
-          <option value="buses">Bus</option><option value="substations">Substation</option><option value="generators">Generator</option>
-          <option value="lines">Line</option><option value="loads">Load</option><option value="batteries">Battery</option>
-        </select>
-        <span id="addFields" class="row"></span><button class="b" id="addEl">Add</button>
+    <div class="grid">
+      <div class="card">
+        <h2>Networks</h2>
+        <div class="row small"><select id="netSel"></select><button class="b" id="netRefresh">↻</button><button class="b d" id="netDelete">Delete</button></div>
+        <div class="row small"><select id="tplSel"></select><button class="b" id="netTemplate">Open template</button><button class="b" id="netBlank">New blank</button></div>
+        <div class="row small"><button class="b p" id="specSave">Save</button><button class="b" id="specSaveNew">Save as new</button><span id="specMsg" class="small"></span></div>
+        <p class="small muted" id="netInfo">Each saved network gets its own FalkorDB graph (multi-graph isolation per owner).</p>
       </div>
-      <textarea id="spec" spellcheck="false"></textarea>
-      <div class="row"><button class="b" id="specValidate">Validate</button><button class="b p" id="specSave">Save to FalkorDB</button><span id="specMsg" class="small"></span></div>
+      <div class="card">
+        <h2>Import a grid file</h2>
+        <div class="row small"><input type="file" id="impFile" accept=".m,.json,.txt"><select id="impFormat"><option value="matpower">MATPOWER (.m)</option><option value="gridpulse">GridPulse spec (.json)</option></select></div>
+        <div class="row small">or sample: <select id="impSample"><option value="ieee14">IEEE 14-bus</option><option value="ieee30">IEEE 30-bus</option><option value="ieee118">IEEE 118-bus</option></select><button class="b" id="impSampleBtn">Load sample file</button></div>
+        <div class="row small"><label>battery at Tier-1 buses (MW) <input type="number" id="impBattery" value="30" min="0" max="1000"></label><label>Tier-1 buses <input id="impTier1" placeholder="auto (e.g. 3,8)" size="12"></label></div>
+        <div id="impOut" class="small muted">The file is converted and shown in the editor; nothing is saved until you click Save as new.</div>
+      </div>
+      <div class="card"><h2>Properties</h2><div id="edProps" class="small muted">Select an element on the canvas.</div></div>
+      <details class="card"><summary>Spec JSON (advanced)</summary><textarea id="spec" spellcheck="false"></textarea><div class="row"><button class="b" id="specApply">Apply JSON to editor</button></div></details>
     </div>
   </div>
 </section>
@@ -189,6 +200,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
 </section>
 </main>
 <div id="toast"></div>
+<script src="assets/lab-editor.js"></script>
 <script src="assets/lab.js"></script>
 </body>
 </html>
