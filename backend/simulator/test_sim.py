@@ -17,8 +17,10 @@ def login(client, role='operator'):
 def test_frontend_and_auth(runtime):
     with TestClient(app) as client:
         assert 'GridPulse' in client.get('/').text
-        for path in ['/login.html','/dashboard.html','/assets/dashboard.js']:
-            assert client.get(path).status_code==200
+        # The console is one page (index.html + app.js); legacy pages redirect into it.
+        for path in ['/login.html','/dashboard.html','/scenarios.html','/audit.html','/lab.html',
+                     '/assets/app.js','/assets/features.js','/assets/lab.js','/assets/lab-editor.js']:
+            assert client.get(path).status_code==200, path
         assert client.post('/api/sim/reset').status_code==401
         for role in ['engineer','auditor']:
             headers=login(client,role)
