@@ -2,6 +2,8 @@
 
 **Graph Hacks (WeMakeDevs × FalkorDB) — Track 01: Agents That Act on Connected Data** (primary) **and Track 02: Agent Memory and Coordination.**
 
+**[Watch the working demo video](https://drive.google.com/file/d/17HpaVV0qCSnjQsdwBz0pqCIWMxrXl-Lx/view?usp=sharing)**
+
 When a 500 kV line fails, power instantly shifts onto the remaining paths and can cascade into a blackout. GridPulse puts an AI operator in front of that problem, but never in charge of it:
 - **The agent investigates.** It uses FalkorDB queries and graph algorithms as its tools.
 - **It remembers.** Past incidents and the plans that fixed them are stored as nodes in the same graph.
