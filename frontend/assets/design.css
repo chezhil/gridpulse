@@ -170,6 +170,43 @@ body.topology-expanded-active{overflow:hidden}
 html:not(.dark) .scada-nav-link{color:#475569}html:not(.dark) .scada-nav-link.scada-nav-active{color:#0369a1;background:#e0f2fe}
 .feature-page{padding:26px;border-radius:24px;display:block}.feature-page.hidden{display:none}.feature-page h2{font:700 clamp(24px,3vw,34px) "Space Grotesk",sans-serif;color:#f8fafc;margin:5px 0 7px}.feature-eyebrow{font:600 10px "JetBrains Mono",monospace;letter-spacing:.18em;color:#38bdf8}.feature-copy{max-width:800px;color:#94a3b8;line-height:1.55;font-size:14px;margin-bottom:24px}.feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;margin:16px 0}.feature-card{min-width:0;border:1px solid rgba(71,85,105,.45);border-radius:18px;background:rgba(9,18,36,.82);padding:18px;margin:14px 0}.feature-card h3{font:600 16px "Space Grotesk",sans-serif;color:#e2e8f0;margin:0 0 14px}.feature-form{display:flex;flex-wrap:wrap;align-items:end;gap:10px}.feature-form label{display:flex;flex-direction:column;gap:6px;color:#94a3b8;font:11px "JetBrains Mono",monospace;min-width:120px}.feature-form .feature-grow{flex:1 1 190px}.feature-form input,.feature-form select{min-height:38px;max-width:100%;width:100%;padding:8px 11px;border:1px solid rgba(100,116,139,.65);border-radius:9px;background:#071324;color:#e2e8f0;font:12px Inter,sans-serif}.feature-form input[type=file]{font-size:11px}.feature-button{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 14px;border:1px solid #0ea5e9;border-radius:9px;background:#075985;color:white;font:600 12px Inter,sans-serif;cursor:pointer;text-decoration:none;margin:3px 6px 3px 0;transition:background .2s,transform .2s}.feature-button:hover{background:#0284c7;transform:translateY(-1px)}.feature-button:disabled{opacity:.45;cursor:not-allowed}.feature-secondary{background:transparent;color:#7dd3fc;border-color:rgba(56,189,248,.4)}.feature-status{min-height:20px;color:#fbbf24;font:12px "JetBrains Mono",monospace;margin:12px 0}.feature-meta{color:#94a3b8;font:12px/1.5 "JetBrains Mono",monospace;margin-top:12px;overflow-wrap:anywhere}.feature-pre{white-space:pre-wrap;overflow:auto;max-height:320px;color:#a5f3fc;font:11px/1.5 "JetBrains Mono",monospace;margin-top:10px}.feature-list{display:grid;gap:8px;max-height:360px;overflow:auto}.feature-list article{padding:10px 12px;background:rgba(15,23,42,.8);border:1px solid rgba(71,85,105,.45);border-radius:10px;color:#cbd5e1;font:11px/1.45 "JetBrains Mono",monospace}.feature-metrics{display:flex;flex-wrap:wrap;gap:10px;color:#cbd5e1;font:12px "JetBrains Mono",monospace}.feature-metrics span{padding:8px 10px;background:rgba(14,165,233,.1);border:1px solid rgba(56,189,248,.3);border-radius:9px}#ask-grid-answer{color:#e2e8f0;line-height:1.55}
 html:not(.dark) .feature-page h2,html:not(.dark) .feature-card h3{color:#0f172a}html:not(.dark) .feature-card{background:#f8fafc}html:not(.dark) .feature-form input,html:not(.dark) .feature-form select{background:white;color:#0f172a}html:not(.dark) .feature-list article{background:#fff;color:#334155}html:not(.dark) #ask-grid-answer{color:#0f172a}
+/* The console sits inside a light-on-dark body. Give its light surfaces their own
+   ink and panel colors so data remains readable when day mode is selected. */
+html:not(.dark) #view-console{color:#17243b}
+html:not(.dark) #view-console .scada-surface{color:#17243b}
+html:not(.dark) #view-console .text-slate-400{color:#52647d}
+html:not(.dark) #view-console .text-slate-300{color:#334155}
+html:not(.dark) #view-console .integration-controls label,
+html:not(.dark) #view-console .feature-form label{color:#334155}
+html:not(.dark) #view-console .integration-controls input:not([type="checkbox"]){background:#fff;border-color:#94a3b8;color:#0f172a}
+html:not(.dark) #view-console .integration-controls input::placeholder{color:#64748b}
+html:not(.dark) #view-console .integration-result{color:#24344e}
+html:not(.dark) #view-console #console-cypher-pre,
+html:not(.dark) #view-console #console-mcp-log{background:#eef5fc;color:#16324f;border-color:#cbd9e8}
+html:not(.dark) #view-console #console-audit-tbody{color:#17243b}
+html:not(.dark) #view-console #console-audit-tbody tr{border-color:#d5deea}
+html:not(.dark) #view-console #console-audit-tbody tr:hover{background:#f1f7fd}
+html:not(.dark) #view-console #console-audit-tbody pre{color:#24344e}
+html:not(.dark) #view-console .feature-copy,
+html:not(.dark) #view-console .feature-meta{color:#475569}
+html:not(.dark) #view-console .feature-metrics{color:#23405e}
+html:not(.dark) #view-console .feature-metrics span{background:#e8f4fc;border-color:#b6d9ef;color:#23405e}
+html:not(.dark) #view-console .feature-pre{color:#075985}
+html:not(.dark) #view-console .feature-secondary{color:#075985;border-color:#7bbadd}
+html:not(.dark) #view-console .feature-status{color:#92400e}
+html:not(.dark) #view-console .feature-card{border-color:#cbd5e1;background:#f8fafc}
+html:not(.dark) #view-console .feature-form input,
+html:not(.dark) #view-console .feature-form select{border-color:#94a3b8}
+html:not(.dark) #view-console .scada-nav-link:hover{color:#075985}
+html:not(.dark) #view-console .scada-nav-divider{color:#475569}
+html:not(.dark) #view-console #scada-page-topology button.bg-slate-800{background:#e2e8f0;color:#1e293b;border-color:#94a3b8}
+html:not(.dark) #view-console #scada-topology-view{background:#f0f7fc;border-color:#cbd5e1}
+html:not(.dark) #view-console .topology-fullscreen-toggle{background:#fff;color:#075985;border-color:#7bbadd}
+html:not(.dark) #view-console button[aria-label="Toggle Day and Night Theme"]{background:#e2e8f0;border-color:#94a3b8}
+html:not(.dark) #view-console .integration-controls input[type="checkbox"]{accent-color:#0369a1}
+html:not(.dark) #view-console .integration-controls label:has(input[type="checkbox"]){flex-direction:row;align-items:center;gap:8px}
+html:not(.dark) #scada-topology-view:fullscreen,
+html:not(.dark) #scada-topology-view.topology-expanded{background:#f0f7fc}
 @media(max-width:820px){.feature-grid{grid-template-columns:1fr}.feature-page{padding:17px}.feature-form label{flex:1 1 100%}}
 #scada-topology-view:fullscreen,#scada-topology-view.topology-expanded{animation:topologyExpand .42s cubic-bezier(.2,.8,.2,1) both}
 #scada-topology-view.topology-returning{animation:topologyReturn .32s ease-out}
